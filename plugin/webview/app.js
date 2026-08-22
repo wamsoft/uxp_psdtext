@@ -703,6 +703,70 @@ function refreshSheetFromTree() {
 }
 
 //---------------------------------------------------------------------------
+// お気に入りフォント管理ダイアログ
+//
+// 全フォントを名前 (ファミリ / PS) で検索して、行クリックで登録/解除する。
+// コンボ側のドロップダウンには、ここで登録したものと使用中のものだけが並ぶ。
+//---------------------------------------------------------------------------
+
+const FM_CAP = 300;   ///< 一度に描画する最大行数 (それ以上は絞り込んでもらう)
+let fmTimer = null;
+
+function openFontMgr() {
+	ensureFonts().then(() => {
+		$('#fmSearch').value = '';
+		renderFontMgr();
+		$('#fontMgrDialog').hidden = false;
+		$('#fmSearch').focus();
+	});
+}
+
+function closeFontMgr() {
+	$('#fontMgrDialog').hidden = true;
+}
+
+function renderFontMgr() {
+	const q = $('#fmSearch').value.trim().toLowerCase();
+	const list = q
+		? fontsCache.filter(f =>
+			fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q))
+		: [...fontsCache];
+	const host = $('#fmList');
+	host.textContent = '';
+	for (const f of list.slice(0, FM_CAP)) {
+		const d = document.createElement('div');
+		d.className = 'font-item';
+		const star = document.createElement('span');
+		star.className = 'font-star' + (favFonts.has(f.ps) ? ' on' : '');
+		star.textContent = favFonts.has(f.ps) ? '★' : '☆';
+		const main = document.createElement('span');
+		main.className = 'font-main';
+		main.textContent = fontLabel(f);
+		const sub = document.createElement('span');
+		sub.className = 'hint';
+		sub.textContent = f.ps;
+		d.append(star, main, sub);
+		d.addEventListener('click', () => {
+			if (favFonts.has(f.ps)) favFonts.delete(f.ps);
+			else favFonts.add(f.ps);
+			saveFavFonts();
+			// 行の場所は動かさず、星だけその場で描き替える
+			star.className = 'font-star' + (favFonts.has(f.ps) ? ' on' : '');
+			star.textContent = favFonts.has(f.ps) ? '★' : '☆';
+			$('#fmCount').textContent = tr('fontmgr.count', favFonts.size);
+		});
+		host.appendChild(d);
+	}
+	if (list.length > FM_CAP) {
+		const more = document.createElement('div');
+		more.className = 'font-hint';
+		more.textContent = tr('fontmgr.more', list.length - FM_CAP);
+		host.appendChild(more);
+	}
+	$('#fmCount').textContent = tr('fontmgr.count', favFonts.size);
+}
+
+//---------------------------------------------------------------------------
 // 初期書式ダイアログ
 //
 // チェックした項目 (フォント / サイズ / 色 / 揃え) だけを、対象テキスト
@@ -789,26 +853,17 @@ async function refreshUsedFonts() {
 	} catch (e) { /* 前回の値のまま */ }
 }
 
-/// ドロップダウンの中身。検索なし = お気に入り + 使用中だけの短いリスト。
-/// 検索あり = 全フォントから探す (お気に入り/使用中のヒットを先頭に)。
+/// ドロップダウンの中身はお気に入り + 使用中だけ (全フォントは出さない)。
+/// 入力があればその中を絞り込む。全フォントからの検索と登録は
+/// ★ボタンの管理ダイアログで行う。
 function comboGroups(q) {
-	if (!q) {
-		const fav = [...favFonts].map(fontByPs);
-		const used = usedFonts.filter(ps => !favFonts.has(ps)).map(fontByPs);
-		const groups = [];
-		if (fav.length) groups.push({ header: tr('font.fav'), items: fav });
-		if (used.length) groups.push({ header: tr('font.used'), items: used });
-		// どちらも空なら全フォント (初回はここから ☆ で登録してもらう)
-		if (!groups.length) groups.push({ header: tr('font.all'), items: [...fontsCache] });
-		return groups;
-	}
-	const match = f => fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q);
-	const prio = [...new Set([...favFonts, ...usedFonts])].map(fontByPs).filter(match);
-	const prioSet = new Set(prio.map(f => f.ps));
-	const rest = fontsCache.filter(f => !prioSet.has(f.ps) && match(f));
+	const match = f => !q ||
+		fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q);
+	const fav = [...favFonts].map(fontByPs).filter(match);
+	const used = usedFonts.filter(ps => !favFonts.has(ps)).map(fontByPs).filter(match);
 	const groups = [];
-	if (prio.length) groups.push({ header: tr('font.favused'), items: prio });
-	if (rest.length) groups.push({ header: tr('font.all'), items: rest });
+	if (fav.length) groups.push({ header: tr('font.fav'), items: fav });
+	if (used.length) groups.push({ header: tr('font.used'), items: used });
 	return groups;
 }
 
@@ -847,42 +902,29 @@ function attachFontCombo(inputEl, onChange) {
 				items.push(f);
 				const d = document.createElement('div');
 				d.className = 'font-item';
-				const star = document.createElement('span');
-				star.className = 'font-star' + (favFonts.has(f.ps) ? ' on' : '');
-				star.textContent = favFonts.has(f.ps) ? '★' : '☆';
-				star.title = tr('font.star.title');
-				// ☆ は選択せずお気に入りだけ切り替える (blur より先に拾う)
-				star.addEventListener('mousedown', (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					if (favFonts.has(f.ps)) favFonts.delete(f.ps);
-					else favFonts.add(f.ps);
-					saveFavFonts();
-					show(lastFiltered);
-				});
 				const main = document.createElement('span');
 				main.className = 'font-main';
 				main.textContent = fontLabel(f);
 				const sub = document.createElement('span');
 				sub.className = 'hint';
 				sub.textContent = f.ps;
-				d.append(star, main, sub);
+				d.append(main, sub);
 				d.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); });
 				drop.appendChild(d);
 				rows.push(d);
 			}
 		}
-		// お気に入りが無いうちは ☆ の使い方をひとこと出しておく
-		if (!favFonts.size) {
+		// リストが空 (お気に入り未登録 + テキストレイヤ無し) なら案内だけ出す
+		if (!items.length) {
 			const hint = document.createElement('div');
 			hint.className = 'font-hint';
-			hint.textContent = tr('font.hint');
+			hint.textContent = tr('fontcombo.empty');
 			drop.appendChild(hint);
 		}
 		active = inputEl.dataset.ps
 			? items.findIndex(f => f.ps === inputEl.dataset.ps) : -1;
 		if (active >= 0) markActive();
-		drop.hidden = !items.length;
+		drop.hidden = false;
 	};
 
 	inputEl.addEventListener('input', () => {
@@ -1032,11 +1074,19 @@ function wire() {
 	$('#sheetBtn').addEventListener('click', openSheetDialog);
 	$('#styleBtn').addEventListener('click', openStyleDialog);
 
+	$('#editFontMgr').addEventListener('click', openFontMgr);
+	$('#stFontMgr').addEventListener('click', openFontMgr);
+	$('#fmSearch').addEventListener('input', () => {
+		if (fmTimer) clearTimeout(fmTimer);
+		fmTimer = setTimeout(renderFontMgr, 120);   // IME 入力を邪魔しないよう少し待つ
+	});
+
 	// 各モーダルの × とオーバーレイクリック
 	for (const [dlg, close] of [
 		['#editDialog', closeEditDialog],
 		['#sheetDialog', closeSheetDialog],
 		['#styleDialog', closeStyleDialog],
+		['#fontMgrDialog', closeFontMgr],
 		['#helpDialog', closeHelp],
 	]) {
 		$(dlg).querySelector('[data-close]').addEventListener('click', close);
@@ -1077,6 +1127,7 @@ function wire() {
 		}
 		if (e.key === 'Escape') {
 			if (!$('#helpDialog').hidden) closeHelp();
+			else if (!$('#fontMgrDialog').hidden) closeFontMgr();
 			else if (!$('#styleDialog').hidden) closeStyleDialog();
 			else if (!$('#sheetDialog').hidden) closeSheetDialog();
 			else if (!$('#editDialog').hidden) closeEditDialog();

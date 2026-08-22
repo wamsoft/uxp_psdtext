@@ -62,6 +62,7 @@
 						<input type="text" id="editFont" spellcheck="false"
 							data-i18n-ph="style.font.ph">
 					</div>
+					<button id="editFontMgr" class="mini" data-i18n-title="fontmgr.open.title">★</button>
 				</div>
 				<div class="row">
 					<label><span data-i18n="style.size">Size</span>
@@ -137,12 +138,15 @@
 					data-i18n-title="style.from.title">Read from selected</button>
 			</div>
 			<div class="st-fields">
-				<label class="row"><input type="checkbox" id="stUseFont">
+				<div class="row" style="flex-wrap:nowrap">
+					<input type="checkbox" id="stUseFont">
 					<span class="st-name" data-i18n="style.font">Font</span>
 					<div class="font-combo" style="flex:1">
 						<input type="text" id="stFont" spellcheck="false"
 							data-i18n-ph="style.font.ph">
-					</div></label>
+					</div>
+					<button id="stFontMgr" class="mini" data-i18n-title="fontmgr.open.title">★</button>
+				</div>
 				<label class="row"><input type="checkbox" id="stUseSize">
 					<span class="st-name" data-i18n="style.size">Size</span>
 					<input type="number" id="stSize" class="num" min="0.1" step="0.5" value="12"> pt</label>
@@ -162,6 +166,24 @@
 				<button id="stApply" class="primary" data-i18n="style.apply">Apply</button>
 				<span id="stStatus" class="status"></span>
 			</div>
+		</div>
+	</div>
+</div>
+
+<!-- お気に入りフォント管理 (★ ボタンから開く。全フォントを検索して登録) -->
+<div id="fontMgrDialog" class="modal" hidden>
+	<div class="modal-box">
+		<div class="modal-head">
+			<span data-i18n="fontmgr.title">Favorite fonts</span>
+			<button class="icon close" data-close>×</button>
+		</div>
+		<div class="modal-body">
+			<p class="hint" data-i18n="fontmgr.hint"></p>
+			<input type="search" id="fmSearch" data-i18n-ph="fontmgr.search.ph" spellcheck="false">
+			<div class="sheet-wrap" style="max-height:52vh">
+				<div id="fmList"></div>
+			</div>
+			<div class="row"><span id="fmCount" class="hint"></span></div>
 		</div>
 	</div>
 </div>
