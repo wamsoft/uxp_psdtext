@@ -9,7 +9,7 @@
 
 import { dlog } from './debug.js';
 import { tr, applyI18n, toggleLang, currentLang } from './i18n.js';
-import { baseStyle, styleAt, editRange, shiftPos } from './tags.js';
+import { baseStyle, sameValue, STYLE_ATTRS } from './tags.js';
 import { rangesToTagged, taggedToRich } from './rich.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -344,35 +344,214 @@ function clickLayer(id, e) {
 // 単体編集 (ダブルクリック / F2)
 //---------------------------------------------------------------------------
 
-let editTarget = null;   ///< {id, orig, origName, origStyle, richBase, useRich, loaded}
+let editTarget = null;   ///< {id, origJson, origName, origStyle, richBase, useRich, loaded}
 const editTouched = { font: false, size: false, color: false, align: false };
+
+//---------------------------------------------------------------------------
+// WYSIWYG エディタ (contenteditable)
+//
+// 内部モデル {text, ranges} を範囲ごとの <span> として実描画し、適用時に
+// DOM から直列化して書き戻す。実データは各 span の dataset.st に持つので、
+// 見た目の CSS を読み戻す必要はない。Enter と貼り付けを介入してテキスト
+// ノードだけの平らな構造を保つ。
+//---------------------------------------------------------------------------
+
+function eqStyle(a, z) {
+	return STYLE_ATTRS.every(k => sameValue(k, a[k], z[k]));
+}
+
+function editBase() {
+	return baseStyle(editTarget && editTarget.richBase || {});
+}
+
+/// 隣り合う同一スタイルをまとめ、空範囲を捨てる
+function mergeRanges(model) {
+	const out = [];
+	for (const r of model.ranges) {
+		if (r.to <= r.from) continue;
+		const last = out[out.length - 1];
+		if (last && last.to === r.from && eqStyle(last, r)) last.to = r.to;
+		else out.push({ ...r });
+	}
+	if (!out.length) out.push({ from: 0, to: model.text.length, ...editBase() });
+	return { text: model.text, ranges: out };
+}
+
+/// 変更検出用の正規形
+function modelJson(model) {
+	const m = mergeRanges(model);
+	return JSON.stringify([m.text, m.ranges.map(r =>
+		[r.from, r.to, r.font, r.size, r.color, r.bold, r.italic, r.underline])]);
+}
+
+function renderRichEditor(model) {
+	const host = $('#editRich');
+	host.textContent = '';
+	const m = mergeRanges(model);
+	// 基準サイズが約 14px で見えるように全体を縮尺 (PSD の pt は巨大なことがある)
+	const bsize = (m.ranges[0] && m.ranges[0].size) || 24;
+	const scale = Math.max(0.15, Math.min(2, 14 / bsize));
+	for (const r of m.ranges) {
+		const st = baseStyle(r);
+		const span = document.createElement('span');
+		span.textContent = m.text.slice(r.from, r.to);
+		span.dataset.st = JSON.stringify(st);
+		const f = fontsCache.find(x => x.ps === st.font);
+		span.style.fontFamily = f ? '"' + f.family + '"' : (st.font || 'inherit');
+		span.style.fontSize = Math.max(9, Math.min(48, st.size * scale)) + 'px';
+		span.style.color = st.color;
+		span.style.fontWeight = st.bold ? '700' : '400';
+		span.style.fontStyle = st.italic ? 'italic' : 'normal';
+		span.style.textDecoration = st.underline ? 'underline' : 'none';
+		host.appendChild(span);
+	}
+}
+
+function serializeRichEditor() {
+	const host = $('#editRich');
+	const b = editBase();
+	let text = '';
+	const ranges = [];
+	const push = (piece, st) => {
+		if (!piece) return;
+		const from = text.length;
+		text += piece;
+		const last = ranges[ranges.length - 1];
+		if (last && eqStyle(last, st)) last.to = text.length;
+		else ranges.push({ from, to: text.length, ...st });
+	};
+	const walk = (node, st) => {
+		if (node.nodeType === Node.TEXT_NODE) { push(node.nodeValue, st); return; }
+		if (node.nodeName === 'BR') { push('\n', st); return; }
+		let s2 = st;
+		if (node.dataset && node.dataset.st) {
+			try { s2 = baseStyle(JSON.parse(node.dataset.st)); } catch (e) { /* st のまま */ }
+		}
+		// 万一ブロック要素が紛れ込んでも改行として拾う
+		if (/^(DIV|P)$/.test(node.nodeName) && text && !text.endsWith('\n')) push('\n', st);
+		for (const c of node.childNodes) walk(c, s2);
+	};
+	for (const c of host.childNodes) walk(c, b);
+	if (!ranges.length) ranges.push({ from: 0, to: text.length, ...b });
+	else ranges[ranges.length - 1].to = text.length;
+	return { text, ranges };
+}
+
+/// いまの選択範囲をプレーン位置で返す (改行はテキストノード内にあるので
+/// Range.toString の長さがそのまま位置になる)
+function selOffsets() {
+	const host = $('#editRich');
+	const sel = window.getSelection();
+	if (!sel.rangeCount) return null;
+	const rng = sel.getRangeAt(0);
+	if (!host.contains(rng.startContainer) || !host.contains(rng.endContainer)) return null;
+	const measure = (container, offset) => {
+		const pre = document.createRange();
+		pre.selectNodeContents(host);
+		pre.setEnd(container, offset);
+		return pre.toString().length;
+	};
+	const s = measure(rng.startContainer, rng.startOffset);
+	const e = measure(rng.endContainer, rng.endOffset);
+	return { s: Math.min(s, e), e: Math.max(s, e) };
+}
+
+function setSelOffsets(s, e) {
+	const host = $('#editRich');
+	const locate = (target) => {
+		let n = 0;
+		const w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+		let node = null, last = null;
+		while ((node = w.nextNode())) {
+			last = node;
+			if (n + node.nodeValue.length >= target) return { node, off: target - n };
+			n += node.nodeValue.length;
+		}
+		return last ? { node: last, off: last.nodeValue.length } : null;
+	};
+	const a = locate(s), z = locate(e);
+	if (!a || !z) return;
+	const sel = window.getSelection();
+	const r = document.createRange();
+	r.setStart(a.node, a.off);
+	r.setEnd(z.node, z.off);
+	sel.removeAllRanges();
+	sel.addRange(r);
+}
+
+/// 選択範囲 [s,e) へ書式を直接適用する (範囲を割ってスタイルを上書き)
+function applyStyleToSel(changes) {
+	if (!editTarget) return;
+	const off = selOffsets();
+	if (!off || off.s >= off.e) {
+		setStatus('#editStatus', tr('fmt.needSel'), 'error');
+		return;
+	}
+	const model = serializeRichEditor();
+	const out = [];
+	const cut = (a, z, st) => { if (z > a) out.push({ from: a, to: z, ...baseStyle(st) }); };
+	for (const r of model.ranges) {
+		const s = Math.max(r.from, off.s), e = Math.min(r.to, off.e);
+		if (s >= e) { cut(r.from, r.to, r); continue; }
+		cut(r.from, s, r);
+		cut(s, e, { ...baseStyle(r), ...changes });
+		cut(e, r.to, r);
+	}
+	renderRichEditor({ text: model.text, ranges: out });
+	setSelOffsets(off.s, off.e);
+	$('#editRich').focus();
+	setStatus('#editStatus', '');
+}
+
+/// 選択開始位置に効いているスタイル (トグル判定用)
+function styleAtSel() {
+	const off = selOffsets();
+	const model = serializeRichEditor();
+	const pos = off ? off.s : 0;
+	const r = model.ranges.find(x => pos >= x.from && pos < x.to) ||
+	          model.ranges[model.ranges.length - 1];
+	return r ? baseStyle(r) : editBase();
+}
+
+function toggleFlagSel(attr) {
+	applyStyleToSel({ [attr]: !styleAtSel()[attr] });
+}
+
+/// 選択範囲を基準の書式へ戻す
+function resetSelToBase() {
+	applyStyleToSel({ ...editBase() });
+}
+
+//---------------------------------------------------------------------------
 
 function openEditDialog(id) {
 	const row = state.byId.get(id);
 	if (!row || !row.text) return;
 	editTarget = {
-		id, orig: row.body || '', origName: row.name, origStyle: {},
-		richBase: null, useRich: false, loaded: false,
+		id, origName: row.name, origStyle: {}, origJson: '',
+		richBase: baseStyle({}), useRich: false, loaded: false,
 	};
 	for (const k of Object.keys(editTouched)) editTouched[k] = false;
 	$('#editTitle').textContent = row.name;
 	$('#editPath').textContent = row.path;
 	$('#editName').value = row.name;
-	$('#editText').value = editTarget.orig;   // 仮 (プレーン)。rich が来たら差し替え
 	$('#editFont').value = '';
 	$('#editFont').dataset.ps = '';
 	$('#editSize').value = '';
 	$('#editColor').value = '#ffffff';
 	$('#editAlign').value = '';
+	// 仮表示 (プレーン + 既定スタイル)。rich が読めたら差し替える
+	renderRichEditor({ text: row.body || '', ranges: [] });
+	editTarget.origJson = modelJson(serializeRichEditor());
 	setStatus('#editStatus', '');
 	$('#editDialog').hidden = false;
-	$('#editText').focus();
+	$('#editRich').focus();
 	ensureFonts();
 	refreshUsedFonts();
 	loadEditRich(id);
 }
 
-/// 部分書式ごとの本文 (タグ付き) と基準書式を読んで欄に反映する。
+/// 部分書式と基準書式を読んで、エディタと欄に反映する。
 /// rich が読めないレイヤはプレーン編集のまま動く。
 async function loadEditRich(id) {
 	try {
@@ -380,22 +559,26 @@ async function loadEditRich(id) {
 			request('getRich', { id }),
 			request('getStyle', { id }),
 		]);
-		await ensureFonts();   // PS 名 → ファミリ名表示のため
+		await ensureFonts();   // フォントのファミリ名表示のため
 		if (!editTarget || editTarget.id !== id) return;   // もう別のレイヤを開いた
 		const st = styleRes.style || {};
+		const unedited = modelJson(serializeRichEditor()) === editTarget.origJson;
 
 		if (!richRes.message) {
 			editTarget.useRich = true;
 			editTarget.richBase = baseStyle((richRes.ranges || [])[0] || {});
-			const tagged = rangesToTagged(richRes.text || '', richRes.ranges || []);
-			const untouchedBody = $('#editText').value ===
-				((state.byId.get(id) || {}).body || '');
-			editTarget.orig = tagged;
-			if (untouchedBody) $('#editText').value = tagged;
+			const model = { text: richRes.text || '', ranges: richRes.ranges || [] };
+			if (unedited) renderRichEditor(model);
+			editTarget.origJson = modelJson(model);
 			const b = editTarget.richBase;
 			editTarget.origStyle = { font: b.font, size: b.size, color: b.color, align: st.align };
 		} else {
-			editTarget.orig = $('#editText').value;
+			editTarget.richBase = baseStyle({ font: st.font, size: st.size, color: st.color });
+			if (unedited) {
+				const m = serializeRichEditor();
+				renderRichEditor({ text: m.text, ranges: [] });
+				editTarget.origJson = modelJson(serializeRichEditor());
+			}
 			editTarget.origStyle = st;
 		}
 
@@ -409,63 +592,6 @@ async function loadEditRich(id) {
 	} catch (e) { /* プレーン編集のまま */ }
 }
 
-//--- 選択範囲への書式付け (タグ挿入。ロジックは tags.js の editRange) ------
-
-/// いまの基準書式 (基準欄でユーザーが触った値を反映したもの)
-function editSelBase() {
-	const b = { ...(editTarget && editTarget.richBase || baseStyle({})) };
-	if (editTouched.font) {
-		const f = resolveFontPs($('#editFont'));
-		if (f) b.font = f;
-	}
-	if (editTouched.size) {
-		const v = parseFloat($('#editSize').value);
-		if (v > 0) b.size = v;
-	}
-	if (editTouched.color) b.color = $('#editColor').value;
-	return b;
-}
-
-function applyRangeTag(changes) {
-	if (!editTarget) return;
-	if (!editTarget.useRich) {
-		setStatus('#editStatus', tr('fmt.noRich'), 'error');
-		return;
-	}
-	const ta = $('#editText');
-	const s = ta.selectionStart, e = ta.selectionEnd;
-	if (s >= e) {
-		setStatus('#editStatus', tr('fmt.needSel'), 'error');
-		ta.focus();
-		return;
-	}
-	const res = editRange(ta.value, s, e, changes, editSelBase());
-	const ns = shiftPos(s, res.edits), ne = shiftPos(e, res.edits);
-	ta.value = res.text;
-	ta.focus();
-	ta.setSelectionRange(ns, ne);
-	setStatus('#editStatus', '');
-}
-
-function toggleFlagTag(attr) {
-	if (!editTarget || !editTarget.useRich) {
-		setStatus('#editStatus', tr('fmt.noRich'), 'error');
-		return;
-	}
-	const ta = $('#editText');
-	const cur = styleAt(ta.value, ta.selectionStart, editSelBase());
-	applyRangeTag({ [attr]: !cur[attr] });
-}
-
-/// 選択範囲の書式を基準へ戻す
-function resetRangeTag() {
-	const b = editSelBase();
-	applyRangeTag({
-		font: null, size: null, color: null,
-		bold: b.bold, italic: b.italic, underline: b.underline,
-	});
-}
-
 function closeEditDialog() {
 	$('#editDialog').hidden = true;
 	editTarget = null;
@@ -477,12 +603,13 @@ function refreshEditFromTree() {
 	if (!editTarget || $('#editDialog').hidden) return;
 	const fresh = state.byId.get(editTarget.id);
 	if (!fresh) return;
-	const ta = $('#editText');
 	const ni = $('#editName');
 	if (!editTarget.useRich) {
-		const textUnedited = ta.value === editTarget.orig;
-		editTarget.orig = fresh.body || '';
-		if (textUnedited && document.activeElement !== ta) ta.value = editTarget.orig;
+		const unedited = modelJson(serializeRichEditor()) === editTarget.origJson;
+		if (unedited && document.activeElement !== $('#editRich')) {
+			renderRichEditor({ text: fresh.body || '', ranges: [] });
+			editTarget.origJson = modelJson(serializeRichEditor());
+		}
 	}
 	const nameUnedited = ni.value === editTarget.origName;
 	editTarget.origName = fresh.name;
@@ -507,25 +634,43 @@ function editStyleDiff() {
 
 async function applyEdit() {
 	if (!editTarget) return;
-	const text = $('#editText').value;
+	const model = mergeRanges(serializeRichEditor());
+	const curJson = modelJson(model);
 	const name = $('#editName').value;
-	const item = { id: editTarget.id };
 	const style = editStyleDiff();   // 触った欄のうち変わったものだけ
+	const item = { id: editTarget.id };
+
+	// 基準欄の変更は「基準と同じ値だった範囲」へ連動させる (psdtext と同じ意味論)
+	const ranges = model.ranges.map(r => ({ ...r }));
+	const newBase = { ...editTarget.richBase };
+	const charChanged = !!(style && (style.font || style.size || style.color));
+	if (charChanged) {
+		for (const attr of ['font', 'size', 'color']) {
+			if (!style[attr]) continue;
+			for (const r of ranges)
+				if (sameValue(attr, r[attr], editTarget.richBase[attr])) r[attr] = style[attr];
+			newBase[attr] = style[attr];
+		}
+	}
 
 	if (editTarget.useRich) {
-		// 本文か文字属性が変わったら、タグを基準で解決して範囲ごと書き戻す
-		const charChanged = style && (style.font || style.size || style.color);
-		if (text !== editTarget.orig || charChanged) {
-			item.rich = taggedToRich(text, editSelBase());
+		if (curJson !== editTarget.origJson || charChanged) {
+			item.rich = {
+				text: model.text,
+				ranges: ranges.map(r => ({
+					from: r.from, to: r.to, font: r.font, size: r.size,
+					color: r.color, bold: r.bold, italic: r.italic, underline: r.underline,
+				})),
+			};
 		}
 		if (style && style.align) item.style = { align: style.align };
 	} else {
-		if (text !== editTarget.orig) item.text = text;
+		if (curJson !== editTarget.origJson) item.text = model.text;
 		if (style) item.style = style;
 	}
 	if (name.trim() && name !== editTarget.origName) item.name = name;
 
-	if (item.text === undefined && !item.rich && item.name === undefined && !item.style) {
+	if (!item.rich && item.text === undefined && item.name === undefined && !item.style) {
 		setStatus('#editStatus', tr('edit.done'), 'ok');   // 変更なし
 		return;
 	}
@@ -534,9 +679,12 @@ async function applyEdit() {
 	try {
 		const res = await request('applyTexts', { items: [item] });
 		if ((res.errors || []).length) throw new Error(res.errors[0].message);
-		editTarget.orig = text;
+		if (item.rich) {
+			editTarget.richBase = baseStyle(newBase);
+			renderRichEditor({ text: model.text, ranges });
+		}
+		editTarget.origJson = modelJson({ text: model.text, ranges });
 		if (item.name !== undefined) editTarget.origName = name;
-		if (item.rich) editTarget.richBase = editSelBase();
 		if (style) {
 			Object.assign(editTarget.origStyle, style);
 			for (const k of Object.keys(editTouched)) editTouched[k] = false;
@@ -1235,17 +1383,31 @@ function wire() {
 	attachFontCombo($('#editFont'), () => { editTouched.font = true; });
 
 	// 選択範囲への書式付け
-	$('#fmtB').addEventListener('click', () => toggleFlagTag('bold'));
-	$('#fmtI').addEventListener('click', () => toggleFlagTag('italic'));
-	$('#fmtU').addEventListener('click', () => toggleFlagTag('underline'));
+	$('#fmtB').addEventListener('click', () => toggleFlagSel('bold'));
+	$('#fmtI').addEventListener('click', () => toggleFlagSel('italic'));
+	$('#fmtU').addEventListener('click', () => toggleFlagSel('underline'));
 	$('#fmtSizeApply').addEventListener('click', () => {
 		const v = parseFloat($('#fmtSize').value);
-		if (v > 0) applyRangeTag({ size: v });
+		if (v > 0) applyStyleToSel({ size: v });
 	});
 	$('#fmtColorApply').addEventListener('click', () => {
-		applyRangeTag({ color: $('#fmtColor').value.toUpperCase() });
+		applyStyleToSel({ color: $('#fmtColor').value.toUpperCase() });
 	});
-	$('#fmtReset').addEventListener('click', resetRangeTag);
+	$('#fmtReset').addEventListener('click', resetSelToBase);
+
+	// WYSIWYG エディタ: 構造をテキストノードだけに保つための介入
+	const ed = $('#editRich');
+	ed.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			document.execCommand('insertText', false, '\n');
+		}
+	});
+	ed.addEventListener('paste', (e) => {
+		e.preventDefault();   // HTML 貼り付けを防いでプレーンテキストにする
+		const t = (e.clipboardData || window.clipboardData).getData('text');
+		if (t) document.execCommand('insertText', false, t.replace(/\r\n?/g, '\n'));
+	});
 	attachFontCombo($('#stFont'), () => {
 		$('#stUseFont').checked = true;   // フォントを選んだ＝適用したいはず
 		updateStyleCounts();

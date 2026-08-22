@@ -73,6 +73,17 @@ button.icon:hover { background: var(--bg3); }
 
 textarea { resize: vertical; width: 100%; }
 
+/* WYSIWYG エディタ。テキスト色をそのまま見せるため下地は明るくする */
+.rich-edit {
+	min-height: 9em; max-height: 42vh; overflow: auto;
+	background: #f2f2f2; color: #000;
+	border: 1px solid var(--border); border-radius: 3px;
+	padding: 8px 10px;
+	white-space: pre-wrap; word-break: break-word;
+	line-height: 1.5;
+}
+.rich-edit:focus { outline: 1px solid var(--accent); }
+
 /*-- レイヤツリー ----------------------------------------------------------*/
 
 #tree { flex: 1; overflow: auto; padding: 2px 0; }
