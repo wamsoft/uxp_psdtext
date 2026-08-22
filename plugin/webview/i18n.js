@@ -109,6 +109,10 @@ const DICT = {
 		'fontmgr.more':    '(他 {0} 件 — 検索で絞り込んでください)',
 		'style.size':      'サイズ',
 		'style.color':     '色',
+		'style.leading':   '行間',
+		'style.leading.ph': '自動',
+		'style.tracking':  '字送り',
+		'style.tracking.title': 'トラッキング (1/1000 em 単位。0 で解除)',
 	},
 	en: {
 		'app.title':       'PSD Text Edit',
@@ -215,6 +219,10 @@ const DICT = {
 		'fontmgr.more':    '({0} more — narrow the search)',
 		'style.size':      'Size',
 		'style.color':     'Color',
+		'style.leading':   'Leading',
+		'style.leading.ph': 'auto',
+		'style.tracking':  'Tracking',
+		'style.tracking.title': 'Tracking (1/1000 em; 0 clears it)',
 	},
 };
 

@@ -351,6 +351,8 @@ function simpleStyle(ts) {
 		italic: !!ts.syntheticItalic,
 		underline: !!(u && u !== "underlineOff"),
 		strike: !!(s && s !== "strikethroughOff"),
+		leading: ts.autoLeading === false ? (Number(unitVal(ts.leading)) || 0) : 0,
+		tracking: Number(ts.tracking) || 0,
 	};
 }
 
@@ -429,6 +431,16 @@ function buildTextStyle(template, st, vertical) {
 		_enum: "strikethrough",
 		_value: st.strike ? "xHeightStrikethroughOn" : "strikethroughOff",
 	};
+	if (typeof st.leading === "number") {
+		if (st.leading > 0) {
+			ts.autoLeading = false;
+			ts.leading = { _unit: "pointsUnit", _value: st.leading };
+		} else {
+			ts.autoLeading = true;
+			delete ts.leading;
+		}
+	}
+	if (typeof st.tracking === "number") ts.tracking = st.tracking;
 	return ts;
 }
 

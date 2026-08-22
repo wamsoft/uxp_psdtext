@@ -69,6 +69,12 @@
 						<input type="text" id="editSize" class="num" inputmode="decimal" spellcheck="false"> pt</label>
 					<label><span data-i18n="style.color">Color</span>
 						<input type="color" id="editColor" value="#ffffff"></label>
+					<label><span data-i18n="style.leading">Leading</span>
+						<input type="text" id="editLeading" class="num" inputmode="decimal"
+							spellcheck="false" data-i18n-ph="style.leading.ph"> pt</label>
+					<label><span data-i18n="style.tracking">Tracking</span>
+						<input type="text" id="editTracking" class="num" inputmode="decimal"
+							spellcheck="false" data-i18n-title="style.tracking.title"></label>
 				</div>
 			</div>
 			<div class="row fmt-bar">
@@ -215,7 +221,9 @@
 				<p>タグモードの文法: <code>[b]太字[/b]</code> <code>[i]斜体[/i]</code>
 				<code>[u]下線[/u]</code> <code>[s]取り消し線[/s]</code>
 				<code>[size=96]大きく[/size]</code> <code>[color=#FF0000]赤[/color]</code>
-				<code>[font=...]</code> <code>[reset]</code>。閉じタグは「基準へ戻す」の意味。
+				<code>[font=...]</code> <code>[leading=14]</code> (行間。<code>auto</code> も可)
+				<code>[tracking=-50]</code> (字送り) <code>[reset]</code>。
+				閉じタグは「基準へ戻す」の意味。
 				文字としての <code>[</code> は <code>[[</code> と書く。</p>
 				<h3>その他</h3>
 				<ul>
@@ -267,8 +275,9 @@
 				<p>Tag-mode syntax: <code>[b]bold[/b]</code> <code>[i]italic[/i]</code>
 				<code>[u]underline[/u]</code> <code>[s]strikethrough[/s]</code>
 				<code>[size=96]big[/size]</code> <code>[color=#FF0000]red[/color]</code>
-				<code>[font=...]</code> <code>[reset]</code>. A closing tag means "back to the
-				base style"; a literal <code>[</code> is written <code>[[</code>.</p>
+				<code>[font=...]</code> <code>[leading=14]</code> (line spacing, <code>auto</code>
+				allowed) <code>[tracking=-50]</code> <code>[reset]</code>. A closing tag means
+				"back to the base style"; a literal <code>[</code> is written <code>[[</code>.</p>
 				<h3>Misc</h3>
 				<ul>
 					<li>Font fields list only <b>favorites + fonts used in this document</b>;

@@ -19,12 +19,15 @@
 /// psdtext の文法 + 取り消し線 [s] (uxp_psdtext 拡張)
 const KNOWN = new Set(['b', 'bold', 'i', 'italic', 'u', 'underline',
                        's', 'strike', 'strikethrough',
+                       'leading', 'tracking',
                        'size', 'font', 'color', 'reset', 'align']);
 
 /// 書式の属性 (align は段落の指定なので別扱い)
-export const STYLE_ATTRS = ['font', 'size', 'color', 'bold', 'italic', 'underline', 'strike'];
-/// 値を持つ属性 (「基準へ戻す」= null を表せる)
-export const VALUE_ATTRS = ['font', 'size', 'color'];
+export const STYLE_ATTRS = ['font', 'size', 'color', 'bold', 'italic', 'underline', 'strike',
+                            'leading', 'tracking'];
+/// 値を持つ属性 (「基準へ戻す」= null を表せる)。
+/// leading は 0 = 自動 (タグでは [leading=auto])、tracking は 1/1000em
+export const VALUE_ATTRS = ['font', 'size', 'color', 'leading', 'tracking'];
 /// on/off だけの属性
 export const FLAG_ATTRS = ['bold', 'italic', 'underline', 'strike'];
 
@@ -167,9 +170,16 @@ export function parseMarks(s) {
 		} else if (a === 'align') {
 			const v = alignValue(tk.value);
 			if (v !== null) m.specs.align = v;
-		} else if (a === 'size') {
+		} else if (a === 'size' || a === 'tracking') {
 			const v = parseFloat(tk.value);
-			m.specs.size = (tk.off || !isFinite(v)) ? null : v;
+			m.specs[a] = (tk.off || !isFinite(v)) ? null : v;
+		} else if (a === 'leading') {
+			if (tk.off) m.specs.leading = null;
+			else if (String(tk.value).trim().toLowerCase() === 'auto') m.specs.leading = 0;
+			else {
+				const v = parseFloat(tk.value);
+				m.specs.leading = isFinite(v) ? v : null;
+			}
 		} else {
 			m.specs[a] = (tk.off || tk.value === '') ? null : tk.value;
 		}
@@ -188,6 +198,8 @@ export function baseStyle(base) {
 		italic:    !!base.italic,
 		underline: !!base.underline,
 		strike:    !!base.strike,
+		leading:   Number(base.leading) || 0,     // 0 = 自動
+		tracking:  Number(base.tracking) || 0,
 	};
 }
 
@@ -233,6 +245,11 @@ export function formatMark(specs) {
 	if ('font' in specs)  o += specs.font === null ? '[/font]' : `[font=${specs.font}]`;
 	if ('size' in specs)  o += specs.size === null ? '[/size]' : `[size=${sizeText(specs.size)}]`;
 	if ('color' in specs) o += specs.color === null ? '[/color]' : `[color=${specs.color}]`;
+	if ('leading' in specs)
+		o += specs.leading === null ? '[/leading]'
+		   : `[leading=${specs.leading === 0 ? 'auto' : sizeText(specs.leading)}]`;
+	if ('tracking' in specs)
+		o += specs.tracking === null ? '[/tracking]' : `[tracking=${sizeText(specs.tracking)}]`;
 	for (const [a, on, off] of [['bold', '[b]', '[/b]'], ['italic', '[i]', '[/i]'],
 	                            ['underline', '[u]', '[/u]'], ['strike', '[s]', '[/s]']])
 		if (a in specs) o += specs[a] ? on : off;
@@ -367,7 +384,8 @@ export function editRange(tagged, s, e, changes, base) {
 }
 
 export function sameValue(attr, a, x) {
-	if (attr === 'size')  return Math.abs(Number(a) - Number(x)) < 0.01;
+	if (attr === 'size' || attr === 'leading' || attr === 'tracking')
+		return Math.abs(Number(a) - Number(x)) < 0.01;
 	if (attr === 'color') return normColor(a) === normColor(x);
 	return a === x;
 }

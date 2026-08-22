@@ -354,7 +354,7 @@ function clickLayer(id, e) {
 //---------------------------------------------------------------------------
 
 let editTarget = null;   ///< {id, origJson, origName, origStyle, richBase, useRich, loaded}
-const editTouched = { font: false, size: false, color: false, align: false };
+const editTouched = { font: false, size: false, color: false, leading: false, tracking: false, align: false };
 
 //---------------------------------------------------------------------------
 // WYSIWYG エディタ (Quill)
@@ -391,6 +391,11 @@ function editBaseMerged() {
 		if (v > 0) b.size = v;
 	}
 	if (editTouched.color) b.color = $('#editColor').value;
+	if (editTouched.leading) {
+		const v = $('#editLeading').value.trim();
+		b.leading = v === '' ? 0 : (parseFloat(v) || 0);
+	}
+	if (editTouched.tracking) b.tracking = parseFloat($('#editTracking').value) || 0;
 	return b;
 }
 
@@ -412,7 +417,7 @@ function modelJson(model) {
 	const m = mergeRanges(model);
 	return JSON.stringify([
 		m.text,
-		m.ranges.map(r => [r.from, r.to, r.font, r.size, r.color, r.bold, r.italic, r.underline, r.strike]),
+		m.ranges.map(r => [r.from, r.to, r.font, r.size, r.color, r.bold, r.italic, r.underline, r.strike, r.leading, r.tracking]),
 		(m.paragraphs || []).map(p => [p.from, p.to, p.align || 'left']),
 	]);
 }
@@ -448,12 +453,16 @@ function initQuill() {
 	}
 	Quill.register(new PtSizeAttr('psize', 'font-size', { scope: Scope.INLINE }), true);
 	Quill.register(new PsFontAttr('psfont', 'font-family', { scope: Scope.INLINE }), true);
+	// 行間・字送りは表示には反映せず、データ属性として運ぶだけ
+	const { Attributor } = Quill.import('parchment');
+	Quill.register(new Attributor('pslead', 'data-lead', { scope: Scope.INLINE }), true);
+	Quill.register(new Attributor('pstrack', 'data-track', { scope: Scope.INLINE }), true);
 	Quill.register(Quill.import('attributors/style/color'), true);
 	Quill.register(Quill.import('attributors/style/align'), true);
 
 	quill = new Quill('#editRich', {
 		modules: { toolbar: false, history: { userOnly: true } },
-		formats: ['bold', 'italic', 'underline', 'strike', 'color', 'psize', 'psfont', 'align'],
+		formats: ['bold', 'italic', 'underline', 'strike', 'color', 'psize', 'psfont', 'pslead', 'pstrack', 'align'],
 	});
 	quill.on('editor-change', () => {
 		if (fmtSyncTimer) clearTimeout(fmtSyncTimer);
@@ -481,6 +490,8 @@ function modelToEditor(model) {
 		if (st.color) attrs.color = st.color;
 		if (st.size > 0) attrs.psize = String(st.size);
 		if (st.font) attrs.psfont = st.font;
+		attrs.pslead = String(st.leading || 0);
+		attrs.pstrack = String(st.tracking || 0);
 		d.insert(t, attrs);
 	};
 	for (const r of m.ranges) {
@@ -515,6 +526,8 @@ function editorToModel() {
 			color: (typeof at.color === 'string' && at.color) ? at.color : b.color,
 			bold: !!at.bold, italic: !!at.italic, underline: !!at.underline,
 			strike: !!at.strike,
+			leading: at.pslead !== undefined ? (parseFloat(at.pslead) || 0) : b.leading,
+			tracking: at.pstrack !== undefined ? (parseFloat(at.pstrack) || 0) : b.tracking,
 		};
 		const from = text.length;
 		text += piece;
@@ -682,6 +695,8 @@ function openEditDialog(id) {
 	$('#editFont').dataset.ps = '';
 	$('#editSize').value = '';
 	$('#editColor').value = '#ffffff';
+	$('#editLeading').value = '';
+	$('#editTracking').value = '';
 	// モード表示をリセットしつつ、仮表示 (プレーン)。rich が読めたら差し替える
 	if (tagMode) setTagMode(false);
 	modelToEditor({ text: row.body || '', ranges: [], paragraphs: [] });
@@ -715,7 +730,8 @@ async function loadEditRich(id) {
 			if (unedited && !tagMode) modelToEditor(model);
 			editTarget.origJson = modelJson(model);
 			const b = editTarget.richBase;
-			editTarget.origStyle = { font: b.font, size: b.size, color: b.color };
+			editTarget.origStyle = { font: b.font, size: b.size, color: b.color,
+			                         leading: b.leading, tracking: b.tracking };
 		} else {
 			editTarget.richBase = baseStyle({ font: st.font, size: st.size, color: st.color });
 			if (unedited && !tagMode) {
@@ -731,6 +747,8 @@ async function loadEditRich(id) {
 		if (!editTouched.size && typeof os.size === 'number' && os.size > 0)
 			$('#editSize').value = os.size;
 		if (!editTouched.color && os.color) $('#editColor').value = os.color;
+		if (!editTouched.leading) $('#editLeading').value = os.leading > 0 ? os.leading : '';
+		if (!editTouched.tracking) $('#editTracking').value = os.tracking ? os.tracking : '';
 		editTarget.loaded = true;
 	} catch (e) { /* プレーン編集のまま */ }
 }
@@ -770,6 +788,15 @@ function editStyleDiff() {
 	if (editTouched.size && size > 0 && size !== st.size) out.size = size;
 	const color = $('#editColor').value;
 	if (editTouched.color && color !== st.color) out.color = color;
+	if (editTouched.leading) {
+		const v = $('#editLeading').value.trim();
+		const lv = v === '' ? 0 : (parseFloat(v) || 0);
+		if (!sameValue('leading', lv, st.leading || 0)) out.leading = lv;
+	}
+	if (editTouched.tracking) {
+		const tv = parseFloat($('#editTracking').value) || 0;
+		if (!sameValue('tracking', tv, st.tracking || 0)) out.tracking = tv;
+	}
 	return Object.keys(out).length ? out : null;
 }
 
@@ -784,10 +811,10 @@ async function applyEdit() {
 	// 基準欄の変更は「基準と同じ値だった範囲」へ連動させる (psdtext と同じ意味論)
 	const ranges = model.ranges.map(r => ({ ...r }));
 	const newBase = { ...editTarget.richBase };
-	const charChanged = !!(style && (style.font || style.size || style.color));
+	const charChanged = !!(style && ['font', 'size', 'color', 'leading', 'tracking'].some(k => k in style));
 	if (charChanged) {
-		for (const attr of ['font', 'size', 'color']) {
-			if (!style[attr]) continue;
+		for (const attr of ['font', 'size', 'color', 'leading', 'tracking']) {
+			if (!(attr in style)) continue;
 			for (const r of ranges)
 				if (sameValue(attr, r[attr], editTarget.richBase[attr])) r[attr] = style[attr];
 			newBase[attr] = style[attr];
@@ -801,7 +828,7 @@ async function applyEdit() {
 				ranges: ranges.map(r => ({
 					from: r.from, to: r.to, font: r.font, size: r.size,
 					color: r.color, bold: r.bold, italic: r.italic, underline: r.underline,
-					strike: r.strike,
+					strike: r.strike, leading: r.leading, tracking: r.tracking,
 				})),
 				paragraphs: (model.paragraphs || []).map(p => ({
 					from: p.from, to: p.to, align: p.align || 'left',
@@ -1660,7 +1687,8 @@ function wire() {
 	$('#editApply').addEventListener('click', applyEdit);
 	// 書式欄は「触った項目だけ」を適用対象にするため、入力を記録する
 	for (const [id, key] of [['#editFont', 'font'], ['#editSize', 'size'],
-	                         ['#editColor', 'color']]) {
+	                         ['#editColor', 'color'], ['#editLeading', 'leading'],
+	                         ['#editTracking', 'tracking']]) {
 		$(id).addEventListener('input', () => { editTouched[key] = true; });
 		$(id).addEventListener('change', () => { editTouched[key] = true; });
 	}
