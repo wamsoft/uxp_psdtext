@@ -231,7 +231,6 @@ function renderAll() {
 	$('#noDocDetail').textContent = state.lastError || diag;
 	$('#sheetBtn').disabled = !state.doc;
 	$('#selTextsBtn').disabled = !state.doc;
-	$('#styleBtn').disabled = !state.doc;
 	$('#selCount').textContent =
 		state.multi.size > 1 ? tr('sel.count', state.multi.size) : '';
 	renderTree();
@@ -279,6 +278,16 @@ function renderTree() {
 			body.textContent = (l.body || '').replace(/\n/g, ' ');
 			body.title = l.body || '';
 			row.appendChild(body);
+			// 編集導線を見えるように: 行末の ✎ (ダブルクリック / F2 でも開く)
+			const pen = document.createElement('span');
+			pen.className = 'row-edit';
+			pen.textContent = '✎';
+			pen.title = tr('tree.edit.hint');
+			pen.addEventListener('click', (e) => {
+				e.stopPropagation();
+				openEditDialog(l.id);
+			});
+			row.appendChild(pen);
 			row.title = tr('tree.edit.hint');
 			row.addEventListener('dblclick', (e) => {
 				e.stopPropagation();
@@ -360,6 +369,7 @@ let quill = null;
 let editScale = 1;      ///< 表示縮尺 (基準サイズ ≈ 14px)
 let tagMode = false;    ///< タグ編集モード中か
 let fmtSyncTimer = null;
+let lastQuillSel = null;   ///< 直近のエディタ内選択 (ツールバー操作の復元用)
 
 function eqStyle(a, z) {
 	return STYLE_ATTRS.every(k => sameValue(k, a[k], z[k]));
@@ -449,6 +459,8 @@ function initQuill() {
 		if (fmtSyncTimer) clearTimeout(fmtSyncTimer);
 		fmtSyncTimer = setTimeout(syncFmtBar, 60);
 	});
+	// ツールバー操作でフォーカスが外れても選択を思い出せるように控えておく
+	quill.on('selection-change', (r) => { if (r) lastQuillSel = r; });
 }
 
 /// モデルをエディタへ流し込む
@@ -608,6 +620,8 @@ function activeModel() {
 function fmtFormat(name, value) {
 	if (tagMode || !quill) return;
 	quill.focus();
+	// フォントコンボ等で入力欄に触れると選択が飛ぶので、控えから戻す
+	if (lastQuillSel && !quill.getSelection()) quill.setSelection(lastQuillSel, 'silent');
 	quill.format(name, value);
 	syncFmtBar();
 }
@@ -630,8 +644,7 @@ function syncFmtBar() {
 	if (typeof f.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(f.color))
 		$('#fmtColor').value = f.color.toLowerCase();
 	const ps = typeof f.psfont === 'string' && f.psfont ? f.psfont : b.font;
-	const fam = fontsCache.find(x => x.ps === ps);
-	$('#fmtInfo').textContent = (fam ? fontLabel(fam) : (ps || '')) + ' · ' + size + 'pt';
+	if (document.activeElement !== $('#fmtFont')) setFontValue($('#fmtFont'), ps);
 }
 
 /// 選択範囲 (またはカーソル以降の入力) を基準の書式へ戻す
@@ -1180,11 +1193,6 @@ function renderFontMgr() {
 let fontsLoaded = false;
 const fontsCache = [];   ///< [{ps, family, style}] family の五十音/ABC 順
 
-function styleTargets() {
-	const mode = $('#stTarget').value;
-	return state.rows.filter(r => r.text && (mode === 'text' || state.multi.has(r.id)));
-}
-
 /// フォント一覧は重いので、最初に必要になったとき 1 回だけ取る
 async function ensureFonts() {
 	if (fontsLoaded) return;
@@ -1350,86 +1358,6 @@ function attachFontCombo(inputEl, onChange) {
 	});
 }
 
-function selectedTextLayer() {
-	const r = state.selected !== null ? state.byId.get(state.selected) : null;
-	return r && r.text ? r : null;
-}
-
-function openStyleDialog() {
-	if (!state.doc) return;
-	$('#stTarget').value =
-		[...state.multi].some(id => (state.byId.get(id) || {}).text) ? 'sel' : 'text';
-	updateStyleCounts();
-	setStatus('#stStatus', '');
-	$('#styleDialog').hidden = false;
-	ensureFonts();
-	refreshUsedFonts();
-}
-
-function closeStyleDialog() {
-	$('#styleDialog').hidden = true;
-}
-
-function updateStyleCounts() {
-	const n = styleTargets().length;
-	$('#stCount').textContent = tr('style.count', n);
-	const any = ['#stUseFont', '#stUseSize', '#stUseColor', '#stUseAlign']
-		.some(id => $(id).checked);
-	$('#stApply').disabled = !n || !any;
-	$('#stFrom').disabled = !selectedTextLayer();
-}
-
-/// 最後に選んだテキストレイヤの書式を欄に読み込む (書式コピー相当)
-async function readStyleFromSelected() {
-	const src = selectedTextLayer();
-	if (!src) return;
-	setStatus('#stStatus', tr('style.working'));
-	try {
-		const res = await request('getStyle', { id: src.id });
-		await ensureFonts();
-		const st = res.style || {};
-		if (st.font) { setFontValue($('#stFont'), st.font); $('#stUseFont').checked = true; }
-		if (typeof st.size === 'number') { $('#stSize').value = st.size; $('#stUseSize').checked = true; }
-		if (st.color) { $('#stColor').value = st.color; $('#stUseColor').checked = true; }
-		if (st.align) { $('#stAlign').value = st.align; $('#stUseAlign').checked = true; }
-		setStatus('#stStatus', res.message ? String(res.message) : tr('style.read', src.name),
-		          res.message ? 'error' : 'ok');
-	} catch (e) {
-		setStatus('#stStatus', String(e.message || e), 'error');
-	}
-	updateStyleCounts();
-}
-
-async function applyStyleDialog() {
-	const targets = styleTargets();
-	const style = {};
-	if ($('#stUseFont').checked) {
-		const ps = resolveFontPs($('#stFont'));
-		if (ps) style.font = ps;
-	}
-	if ($('#stUseSize').checked) {
-		const v = parseFloat($('#stSize').value);
-		if (v > 0) style.size = v;
-	}
-	if ($('#stUseColor').checked) style.color = $('#stColor').value;
-	if ($('#stUseAlign').checked) style.align = $('#stAlign').value;
-	if (!targets.length || !Object.keys(style).length) return;
-	setStatus('#stStatus', tr('style.working'));
-	$('#stApply').disabled = true;
-	try {
-		const res = await request('applyTexts', {
-			items: targets.map(r => ({ id: r.id, style })),
-		});
-		const failed = (res.errors || []).length;
-		setStatus('#stStatus', failed ? tr('style.doneFailed', res.applied || 0, failed)
-		                              : tr('style.done', res.applied || 0),
-		          failed ? 'error' : 'ok');
-	} catch (e) {
-		setStatus('#stStatus', String(e.message || e), 'error');
-	}
-	updateStyleCounts();
-}
-
 //---------------------------------------------------------------------------
 // ヘルプ
 //---------------------------------------------------------------------------
@@ -1476,10 +1404,8 @@ function wire() {
 	$('#helpBtn').addEventListener('click', openHelp);
 	$('#selTextsBtn').addEventListener('click', selectAllTexts);
 	$('#sheetBtn').addEventListener('click', openSheetDialog);
-	$('#styleBtn').addEventListener('click', openStyleDialog);
 
 	$('#editFontMgr').addEventListener('click', openFontMgr);
-	$('#stFontMgr').addEventListener('click', openFontMgr);
 	$('#fmSearch').addEventListener('input', () => {
 		if (fmTimer) clearTimeout(fmTimer);
 		fmTimer = setTimeout(renderFontMgr, 120);   // IME 入力を邪魔しないよう少し待つ
@@ -1489,7 +1415,6 @@ function wire() {
 	for (const [dlg, close] of [
 		['#editDialog', closeEditDialog],
 		['#sheetDialog', closeSheetDialog],
-		['#styleDialog', closeStyleDialog],
 		['#fontMgrDialog', closeFontMgr],
 		['#helpDialog', closeHelp],
 	]) {
@@ -1525,20 +1450,16 @@ function wire() {
 	$('#fmtAlJ').addEventListener('click', () => fmtFormat('align', 'justify'));
 	$('#fmtReset').addEventListener('click', resetSelToBase);
 	$('#fmtMode').addEventListener('click', () => setTagMode(!tagMode));
-	attachFontCombo($('#stFont'), () => {
-		$('#stUseFont').checked = true;   // フォントを選んだ＝適用したいはず
-		updateStyleCounts();
+	// ツールバーのフォント: 一覧から選んだ時だけ選択範囲へ適用する
+	attachFontCombo($('#fmtFont'), () => {
+		const ps = $('#fmtFont').dataset.ps;
+		if (ps) fmtFormat('psfont', ps);
 	});
 
 	$('#shTarget').addEventListener('change', buildSheet);
 	$('#shCopy').addEventListener('click', copySheet);
 	$('#shApply').addEventListener('click', applySheet);
 
-	$('#stTarget').addEventListener('change', updateStyleCounts);
-	for (const id of ['#stUseFont', '#stUseSize', '#stUseColor', '#stUseAlign'])
-		$(id).addEventListener('change', updateStyleCounts);
-	$('#stFrom').addEventListener('click', readStyleFromSelected);
-	$('#stApply').addEventListener('click', applyStyleDialog);
 
 	document.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 'd') {          // 自己診断行の表示切り替え
@@ -1550,7 +1471,6 @@ function wire() {
 		if (e.key === 'Escape') {
 			if (!$('#helpDialog').hidden) closeHelp();
 			else if (!$('#fontMgrDialog').hidden) closeFontMgr();
-			else if (!$('#styleDialog').hidden) closeStyleDialog();
 			else if (!$('#sheetDialog').hidden) closeSheetDialog();
 			else if (!$('#editDialog').hidden) closeEditDialog();
 			return;

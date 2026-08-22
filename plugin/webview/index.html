@@ -32,8 +32,6 @@
 <footer id="bottombar">
 	<button id="selTextsBtn" data-i18n="tree.selTexts"
 		data-i18n-title="tree.selTexts.title">Select all text</button>
-	<button id="styleBtn" data-i18n="tree.style"
-		data-i18n-title="tree.style.title">Style…</button>
 	<button id="sheetBtn" class="primary" data-i18n="tree.sheet"
 		data-i18n-title="tree.sheet.title">Edit all…</button>
 	<span id="selCount" class="hint"></span>
@@ -78,6 +76,11 @@
 				<button id="fmtI" class="mini" data-i18n-title="fmt.i.title"><i>I</i></button>
 				<button id="fmtU" class="mini" data-i18n-title="fmt.u.title"><u>U</u></button>
 				<span class="fmt-sep"></span>
+				<div class="font-combo fmt-font">
+					<input type="text" id="fmtFont" spellcheck="false"
+						data-i18n-ph="style.font.ph" data-i18n-title="fmt.font.title">
+				</div>
+				<span class="fmt-sep"></span>
 				<input type="text" id="fmtSize" class="num" inputmode="decimal" spellcheck="false"
 					data-i18n-title="fmt.size.title">
 				<button id="fmtSizeApply" class="mini" data-i18n="fmt.apply">Set</button>
@@ -95,7 +98,6 @@
 				<span class="spacer"></span>
 				<button id="fmtMode" class="mini" data-i18n="fmt.mode.tag"
 					data-i18n-title="fmt.mode.title">Tags</button>
-				<span id="fmtInfo" class="hint"></span>
 			</div>
 			<div id="editRich" class="rich-edit"></div>
 			<textarea id="editTags" class="tag-edit" rows="8" spellcheck="false" hidden></textarea>
@@ -138,58 +140,6 @@
 	</div>
 </div>
 
-<!-- 初期書式 (フォント / サイズ / 色 / 揃え) の一括変更 -->
-<div id="styleDialog" class="modal" hidden>
-	<div class="modal-box">
-		<div class="modal-head">
-			<span data-i18n="style.title">Text style</span>
-			<button class="icon close" data-close>×</button>
-		</div>
-		<div class="modal-body">
-			<p class="hint" data-i18n="style.hint"></p>
-			<div class="row" style="align-items:center">
-				<label><span data-i18n="style.target">Layers</span>
-					<select id="stTarget">
-						<option value="sel" data-i18n="style.target.sel">Selected</option>
-						<option value="text" data-i18n="style.target.text">Every text layer</option>
-					</select></label>
-				<span id="stCount" class="hint"></span>
-				<button id="stFrom" data-i18n="style.from"
-					data-i18n-title="style.from.title">Read from selected</button>
-			</div>
-			<div class="st-fields">
-				<div class="row" style="flex-wrap:nowrap">
-					<input type="checkbox" id="stUseFont">
-					<span class="st-name" data-i18n="style.font">Font</span>
-					<div class="font-combo" style="flex:1">
-						<input type="text" id="stFont" spellcheck="false"
-							data-i18n-ph="style.font.ph">
-					</div>
-					<button id="stFontMgr" class="mini" data-i18n-title="fontmgr.open.title">★</button>
-				</div>
-				<label class="row"><input type="checkbox" id="stUseSize">
-					<span class="st-name" data-i18n="style.size">Size</span>
-					<input type="text" id="stSize" class="num" inputmode="decimal" spellcheck="false" value="12"> pt</label>
-				<label class="row"><input type="checkbox" id="stUseColor">
-					<span class="st-name" data-i18n="style.color">Color</span>
-					<input type="color" id="stColor" value="#ffffff"></label>
-				<label class="row"><input type="checkbox" id="stUseAlign">
-					<span class="st-name" data-i18n="style.align">Alignment</span>
-					<select id="stAlign">
-						<option value="left" data-i18n="style.align.left">Left</option>
-						<option value="center" data-i18n="style.align.center">Center</option>
-						<option value="right" data-i18n="style.align.right">Right</option>
-					</select></label>
-			</div>
-			<p class="hint" data-i18n="style.note"></p>
-			<div class="row" style="margin-top:8px; align-items:center">
-				<button id="stApply" class="primary" data-i18n="style.apply">Apply</button>
-				<span id="stStatus" class="status"></span>
-			</div>
-		</div>
-	</div>
-</div>
-
 <!-- お気に入りフォント管理 (★ ボタンから開く。全フォントを検索して登録) -->
 <div id="fontMgrDialog" class="modal" hidden>
 	<div class="modal-box">
@@ -224,8 +174,8 @@
 				<ul>
 					<li>既定ではテキストレイヤだけが並ぶ (「テキスト」フィルタを外すと全レイヤ)</li>
 					<li>クリックで選択 / <b>Ctrl+クリック</b>で追加・解除 / <b>Shift+クリック</b>で範囲選択</li>
-					<li>テキストレイヤを<b>ダブルクリック</b> または <b>F2</b> で単体編集
-						(名前・本文・初期書式をまとめて 1 画面で。適用は履歴 1 段)</li>
+					<li>行末の <b>✎</b>、<b>ダブルクリック</b>、<b>F2</b> のどれでも単体編集
+						(名前・本文・書式をまとめて 1 画面で。適用は履歴 1 段)</li>
 					<li>検索欄はレイヤのパスと本文の部分一致</li>
 					<li><b>テキスト全選択</b>: 表示中のテキストレイヤを全部選択</li>
 				</ul>
@@ -252,11 +202,6 @@
 				<code>[color=#FF0000]赤[/color]</code> <code>[font=...]</code> <code>[reset]</code>。
 				閉じタグは「基準へ戻す」の意味。文字としての <code>[</code> は
 				<code>[[</code> と書く。タグごと Excel 往復できる。</p>
-				<h3>書式…</h3>
-				<p>対象テキストレイヤの<b>初期書式</b> (フォント / サイズ / 色 / 揃え) をまとめて変える。
-				チェックした項目だけが適用され、本文の途中の部分書式には触らない。
-				<b>選択レイヤから取得</b>で、最後に選んだレイヤの書式を欄に読み込める (書式コピー相当)。
-				適用は履歴 1 段。</p>
 				<h3>その他</h3>
 				<ul>
 					<li>セル内の改行はそのままレイヤの改行になる</li>
@@ -272,8 +217,9 @@
 				<ul>
 					<li>By default only text layers are listed (uncheck "Text" to see everything)</li>
 					<li>Click to select / <b>Ctrl+click</b> to add or remove / <b>Shift+click</b> for a range</li>
-					<li><b>Double-click</b> a text layer (or press <b>F2</b>) to edit it on its own
-						(name, contents and base style together in one view; one history step)</li>
+					<li>The <b>✎</b> at the end of a row, a <b>double-click</b>, or <b>F2</b> all
+						open the single-layer editor (name, contents and formatting in one view;
+						one history step)</li>
 					<li>The search box matches layer paths and text contents</li>
 					<li><b>Select all text</b>: selects every listed text layer</li>
 				</ul>
@@ -303,11 +249,6 @@
 				<code>[color=#FF0000]red[/color]</code> <code>[font=...]</code>
 				<code>[reset]</code>. A closing tag means "back to the base style"; a literal
 				<code>[</code> is written <code>[[</code>. Tags survive Excel round-trips.</p>
-				<h3>Style…</h3>
-				<p>Changes the <b>base style</b> (font / size / color / alignment) of the target
-				text layers in bulk. Only the checked fields are applied; formatting on parts of
-				the text is left alone. <b>Read from selected</b> loads the style of the
-				last-selected layer into the fields (style copy). Applies as one history step.</p>
 				<h3>Misc</h3>
 				<ul>
 					<li>Line breaks inside a cell become line breaks in the layer</li>

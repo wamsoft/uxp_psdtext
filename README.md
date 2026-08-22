@@ -20,9 +20,6 @@ Companion to [uxp_psdrename](https://github.com/wamsoft/uxp_psdrename)
 - **Bulk edit ("Edit all…")**: the target text layers in an editable table —
   **layer names and contents** both editable, changed rows are highlighted
   and only they are applied (rule-based bulk renaming lives in uxp_psdrename)
-- **Base style in bulk ("Style…")**: font / size / color / alignment applied
-  to whole layers, with a "read from selected" style-copy helper; formatting
-  on parts of the text is left alone
 - **Clipboard TSV instead of CSV**:
   - *Copy as TSV* puts `layer name ⇥ contents` on the clipboard for Excel /
     spreadsheets (cells with tabs, quotes or line breaks are quoted,
