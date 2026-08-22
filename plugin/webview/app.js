@@ -1253,10 +1253,17 @@ async function pasteSheetFromClipboard() {
 	if (!cols.length) { setStatus('#shStatus', tr('sheet.noCols'), 'error'); return; }
 	let text = '';
 	try {
-		text = await navigator.clipboard.readText();
-	} catch (e) {
-		setStatus('#shStatus', tr('sheet.pasteFail'), 'error');
-		return;
+		// パネル側で読む (webview で読むと毎回 Chromium の許可ダイアログが出る)
+		const res = await request('readClipboard');
+		text = res.text || '';
+	} catch (e) { /* ブリッジ経由で読めなければ webview で試す */ }
+	if (!text) {
+		try {
+			text = await navigator.clipboard.readText();
+		} catch (e) {
+			setStatus('#shStatus', tr('sheet.pasteFail'), 'error');
+			return;
+		}
 	}
 	if (!text || !text.trim()) { setStatus('#shStatus', tr('sheet.pasteEmpty'), 'error'); return; }
 	spreadIntoSheet(text, 0, cols, '');

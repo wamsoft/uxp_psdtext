@@ -9,6 +9,7 @@
 		"minVersion": "26.0.0"
 	},
 	"requiredPermissions": {
+		"clipboard": "readAndWrite",
 		"network": {
 			"domains": [
 				"http://127.0.0.1:18999",

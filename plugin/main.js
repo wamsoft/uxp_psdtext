@@ -79,6 +79,11 @@ async function handleMessage(msg) {
 	case "ping":
 		send({ type: "pong", reqId: msg.reqId });
 		break;
+	case "readClipboard":
+		// webview 側で読むと毎回 Chromium の許可ダイアログが出るので、
+		// manifest で許可済みのこちら側で読んで渡す
+		send({ type: "clipboard", reqId: msg.reqId, text: await readClipboardText() });
+		break;
 	case "applyTexts": {
 		const result = await applyTexts(msg.items || []);
 		send({ type: "textResult", reqId: msg.reqId, ...result });
@@ -115,6 +120,23 @@ async function handleMessage(msg) {
 	default:
 		break;
 	}
+}
+
+/// クリップボードのテキストを読む。UXP のバージョンで API の形が違うので
+/// readText → getContent の順に試す
+async function readClipboardText() {
+	try {
+		if (navigator.clipboard.readText) {
+			return String(await navigator.clipboard.readText() || "");
+		}
+	} catch (e) { /* 次の形へ */ }
+	try {
+		if (navigator.clipboard.getContent) {
+			const c = await navigator.clipboard.getContent();
+			return String((c && (c["text/plain"] || c.plainText)) || "");
+		}
+	} catch (e) { /* 読めなかった */ }
+	return "";
 }
 
 //---------------------------------------------------------------------------
