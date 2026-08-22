@@ -122,18 +122,28 @@ async function handleMessage(msg) {
 	}
 }
 
-/// クリップボードのテキストを読む。UXP のバージョンで API の形が違うので
-/// readText → getContent の順に試す
+/// UXP の clipboard API は環境によって文字列ではなく {"text/plain": "..."}
+/// のようなオブジェクトを返すことがあるので、どちらでもテキストに揃える
+function clipToText(v) {
+	if (v === null || v === undefined) return "";
+	if (typeof v === "string") return v;
+	if (typeof v === "object") {
+		return String(v["text/plain"] ?? v.plainText ?? v.text ?? "");
+	}
+	return String(v);
+}
+
+/// クリップボードのテキストを読む。readText → getContent の順に試す
 async function readClipboardText() {
 	try {
 		if (navigator.clipboard.readText) {
-			return String(await navigator.clipboard.readText() || "");
+			const t = clipToText(await navigator.clipboard.readText());
+			if (t) return t;
 		}
 	} catch (e) { /* 次の形へ */ }
 	try {
 		if (navigator.clipboard.getContent) {
-			const c = await navigator.clipboard.getContent();
-			return String((c && (c["text/plain"] || c.plainText)) || "");
+			return clipToText(await navigator.clipboard.getContent());
 		}
 	} catch (e) { /* 読めなかった */ }
 	return "";
