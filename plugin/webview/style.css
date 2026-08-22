@@ -246,7 +246,8 @@ table.sheet th.on { opacity: 1; }
 	display: flex; flex-direction: column; gap: 8px;
 	padding: 8px; background: var(--bg); border-radius: 4px;
 }
-.st-fields .row { flex-wrap: nowrap; }
+/* フォント行だけ折り返し禁止 (インライン指定)。他の行は項目が増えたら折り返す */
+.st-fields .row { flex-wrap: wrap; }
 .st-name { min-width: 4.5em; }
 input.num { width: 64px; }
 input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
