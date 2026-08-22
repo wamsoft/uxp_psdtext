@@ -188,6 +188,22 @@ table.sheet tr.hit td { background: var(--hit); }
 input.num { width: 64px; }
 input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
 
+.font-combo { position: relative; }
+.font-combo input { width: 100%; }
+.font-drop {
+	position: absolute; left: 0; right: 0; top: 100%;
+	z-index: 20; max-height: 220px; overflow: auto;
+	background: var(--bg2); border: 1px solid var(--border);
+	border-radius: 3px;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+}
+.font-item {
+	display: flex; justify-content: space-between; gap: 10px;
+	padding: 3px 8px; cursor: pointer; white-space: nowrap;
+}
+.font-item .hint { overflow: hidden; text-overflow: ellipsis; }
+.font-item:hover, .font-item.active { background: var(--hit); }
+
 /*-- ヘルプ ----------------------------------------------------------------*/
 
 .help-body { line-height: 1.6; }

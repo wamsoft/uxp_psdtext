@@ -59,7 +59,10 @@
 			<div class="st-fields">
 				<div class="row" style="flex-wrap:nowrap">
 					<span class="st-name" data-i18n="style.font">Font</span>
-					<input type="text" id="editFont" list="fontList" style="flex:1" spellcheck="false">
+					<div class="font-combo" style="flex:1">
+						<input type="text" id="editFont" spellcheck="false"
+							data-i18n-ph="style.font.ph">
+					</div>
 				</div>
 				<div class="row">
 					<label><span data-i18n="style.size">Size</span>
@@ -136,8 +139,10 @@
 			<div class="st-fields">
 				<label class="row"><input type="checkbox" id="stUseFont">
 					<span class="st-name" data-i18n="style.font">Font</span>
-					<input type="text" id="stFont" list="fontList" style="flex:1" spellcheck="false">
-					<datalist id="fontList"></datalist></label>
+					<div class="font-combo" style="flex:1">
+						<input type="text" id="stFont" spellcheck="false"
+							data-i18n-ph="style.font.ph">
+					</div></label>
 				<label class="row"><input type="checkbox" id="stUseSize">
 					<span class="st-name" data-i18n="style.size">Size</span>
 					<input type="number" id="stSize" class="num" min="0.1" step="0.5" value="12"> pt</label>

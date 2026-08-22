@@ -349,6 +349,7 @@ function openEditDialog(id) {
 	$('#editName').value = row.name;
 	$('#editText').value = editTarget.orig;
 	$('#editFont').value = '';
+	$('#editFont').dataset.ps = '';
 	$('#editSize').value = '';
 	$('#editColor').value = '#ffffff';
 	$('#editAlign').value = '';
@@ -363,10 +364,11 @@ function openEditDialog(id) {
 async function loadEditStyle(id) {
 	try {
 		const res = await request('getStyle', { id });
+		await ensureFonts();   // PS 名 → ファミリ名表示のため
 		if (!editTarget || editTarget.id !== id) return;   // もう別のレイヤを開いた
 		const st = res.style || {};
 		editTarget.origStyle = st;
-		if (!editTouched.font && st.font) $('#editFont').value = st.font;
+		if (!editTouched.font && st.font) setFontValue($('#editFont'), st.font);
 		if (!editTouched.size && typeof st.size === 'number') $('#editSize').value = st.size;
 		if (!editTouched.color && st.color) $('#editColor').value = st.color;
 		if (!editTouched.align && st.align) $('#editAlign').value = st.align;
@@ -398,7 +400,7 @@ function refreshEditFromTree() {
 function editStyleDiff() {
 	const st = editTarget.origStyle || {};
 	const out = {};
-	const font = $('#editFont').value.trim();
+	const font = resolveFontPs($('#editFont'));
 	if (editTouched.font && font && font !== st.font) out.font = font;
 	const size = parseFloat($('#editSize').value);
 	if (editTouched.size && size > 0 && size !== st.size) out.size = size;
@@ -701,27 +703,116 @@ function refreshSheetFromTree() {
 //---------------------------------------------------------------------------
 
 let fontsLoaded = false;
+const fontsCache = [];   ///< [{ps, family, style}] family の五十音/ABC 順
 
 function styleTargets() {
 	const mode = $('#stTarget').value;
 	return state.rows.filter(r => r.text && (mode === 'text' || state.multi.has(r.id)));
 }
 
-/// フォント一覧は重いので、最初にダイアログを開いたとき 1 回だけ取る
+/// フォント一覧は重いので、最初に必要になったとき 1 回だけ取る
 async function ensureFonts() {
 	if (fontsLoaded) return;
 	try {
 		const res = await request('getFonts');
-		const dl = $('#fontList');
-		dl.textContent = '';
-		for (const f of res.fonts || []) {
-			const o = document.createElement('option');
-			o.value = f.ps;
-			o.label = f.family + (f.style ? ' ' + f.style : '');
-			dl.appendChild(o);
-		}
+		fontsCache.length = 0;
+		fontsCache.push(...(res.fonts || []));
+		fontsCache.sort((a, b) =>
+			(a.family + ' ' + a.style).localeCompare(b.family + ' ' + b.style, 'ja'));
 		fontsLoaded = true;
 	} catch (e) { /* 一覧が無くても手入力はできる */ }
+}
+
+//---------------------------------------------------------------------------
+// フォントコンボボックス
+//
+// 表示・検索はファミリ名 (日本語名) で、適用に使うのは PostScript 名。
+// datalist は PS 名しかまともに出せないので自前で作る。
+// 入力欄の dataset.ps に確定した PS 名を持つ。
+//---------------------------------------------------------------------------
+
+function fontLabel(f) {
+	return f.family + (f.style ? ' ' + f.style : '');
+}
+
+/// 入力欄へ PS 名をセットし、表示はファミリ名に直す
+function setFontValue(inputEl, ps) {
+	const f = fontsCache.find(x => x.ps === ps);
+	inputEl.value = f ? fontLabel(f) : (ps || '');
+	inputEl.dataset.ps = ps || '';
+}
+
+/// 入力欄から PS 名を決める。選択済みならそれ、手入力なら一覧と突き合わせる
+function resolveFontPs(inputEl) {
+	if (inputEl.dataset.ps) return inputEl.dataset.ps;
+	const v = inputEl.value.trim();
+	if (!v) return '';
+	const lower = v.toLowerCase();
+	const f = fontsCache.find(x => x.ps.toLowerCase() === lower)
+	       || fontsCache.find(x => fontLabel(x).toLowerCase() === lower)
+	       || fontsCache.find(x => x.family.toLowerCase() === lower);
+	return f ? f.ps : v;   // 見つからなければ PS 名の手入力とみなす
+}
+
+function attachFontCombo(inputEl, onChange) {
+	const drop = document.createElement('div');
+	drop.className = 'font-drop';
+	drop.hidden = true;
+	inputEl.parentElement.appendChild(drop);
+	let items = [], active = -1;
+
+	const hide = () => { drop.hidden = true; active = -1; };
+	const markActive = () => {
+		[...drop.children].forEach((c, i) => c.classList.toggle('active', i === active));
+		if (active >= 0) drop.children[active].scrollIntoView({ block: 'nearest' });
+	};
+	const pick = (i) => {
+		const f = items[i];
+		if (!f) return;
+		setFontValue(inputEl, f.ps);
+		hide();
+		if (onChange) onChange();
+	};
+	const show = () => {
+		const q = inputEl.value.trim().toLowerCase();
+		items = fontsCache.filter(f =>
+			!q || fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q)
+		).slice(0, 100);
+		drop.textContent = '';
+		items.forEach((f, i) => {
+			const d = document.createElement('div');
+			d.className = 'font-item';
+			const main = document.createElement('span');
+			main.textContent = fontLabel(f);
+			const sub = document.createElement('span');
+			sub.className = 'hint';
+			sub.textContent = f.ps;
+			d.append(main, sub);
+			// blur より先に拾いたいので mousedown
+			d.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); });
+			drop.appendChild(d);
+		});
+		active = -1;
+		drop.hidden = !items.length;
+	};
+
+	inputEl.addEventListener('input', () => {
+		inputEl.dataset.ps = '';
+		show();
+		if (onChange) onChange();
+	});
+	inputEl.addEventListener('focus', () => { ensureFonts().then(show); });
+	inputEl.addEventListener('blur', () => setTimeout(hide, 150));
+	inputEl.addEventListener('keydown', (e) => {
+		if (drop.hidden) return;
+		if (e.key === 'ArrowDown') { active = Math.min(items.length - 1, active + 1); markActive(); e.preventDefault(); }
+		else if (e.key === 'ArrowUp') { active = Math.max(0, active - 1); markActive(); e.preventDefault(); }
+		else if (e.key === 'Enter') {
+			if (active >= 0) { pick(active); e.preventDefault(); }
+			else if (items.length === 1) { pick(0); e.preventDefault(); }
+		}
+		else if (e.key === 'Escape') { hide(); e.stopPropagation(); }
+	});
 }
 
 function selectedTextLayer() {
@@ -759,8 +850,9 @@ async function readStyleFromSelected() {
 	setStatus('#stStatus', tr('style.working'));
 	try {
 		const res = await request('getStyle', { id: src.id });
+		await ensureFonts();
 		const st = res.style || {};
-		if (st.font) { $('#stFont').value = st.font; $('#stUseFont').checked = true; }
+		if (st.font) { setFontValue($('#stFont'), st.font); $('#stUseFont').checked = true; }
 		if (typeof st.size === 'number') { $('#stSize').value = st.size; $('#stUseSize').checked = true; }
 		if (st.color) { $('#stColor').value = st.color; $('#stUseColor').checked = true; }
 		if (st.align) { $('#stAlign').value = st.align; $('#stUseAlign').checked = true; }
@@ -775,7 +867,10 @@ async function readStyleFromSelected() {
 async function applyStyleDialog() {
 	const targets = styleTargets();
 	const style = {};
-	if ($('#stUseFont').checked && $('#stFont').value.trim()) style.font = $('#stFont').value.trim();
+	if ($('#stUseFont').checked) {
+		const ps = resolveFontPs($('#stFont'));
+		if (ps) style.font = ps;
+	}
 	if ($('#stUseSize').checked) {
 		const v = parseFloat($('#stSize').value);
 		if (v > 0) style.size = v;
@@ -867,6 +962,11 @@ function wire() {
 		$(id).addEventListener('input', () => { editTouched[key] = true; });
 		$(id).addEventListener('change', () => { editTouched[key] = true; });
 	}
+	attachFontCombo($('#editFont'), () => { editTouched.font = true; });
+	attachFontCombo($('#stFont'), () => {
+		$('#stUseFont').checked = true;   // フォントを選んだ＝適用したいはず
+		updateStyleCounts();
+	});
 
 	$('#shTarget').addEventListener('change', buildSheet);
 	$('#shCopy').addEventListener('click', copySheet);
