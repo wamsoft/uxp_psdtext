@@ -91,6 +91,15 @@ async function handleMessage(msg) {
 	case "getStyle":
 		send({ type: "style", reqId: msg.reqId, ...readStyle(msg.id) });
 		break;
+	case "getUsedFonts":
+		send({ type: "usedFonts", reqId: msg.reqId, fonts: usedFontsList() });
+		break;
+	case "getPrefs":
+		send({ type: "prefs", reqId: msg.reqId, prefs: await readPrefs() });
+		break;
+	case "setPrefs":
+		send({ type: "prefsSaved", reqId: msg.reqId, ok: await writePrefs(msg.prefs || {}) });
+		break;
 	default:
 		break;
 	}
@@ -308,6 +317,63 @@ function makeSolidColor(hex) {
 function justificationOf(align) {
 	const J = require("photoshop").constants.Justification;
 	return align === "left" ? J.LEFT : align === "center" ? J.CENTER : J.RIGHT;
+}
+
+/// いまのドキュメントのテキストレイヤで使われているフォント (PS 名) を集める
+function usedFontsList() {
+	const doc = app.activeDocument;
+	const out = new Set();
+	if (!doc) return [];
+	const visit = (layers) => {
+		for (const l of layers) {
+			try {
+				if (l.textItem) {
+					const f = l.textItem.characterStyle.font;
+					if (f) out.add(f);
+				}
+			} catch (e) { /* 読めないレイヤは飛ばす */ }
+			try {
+				if (l.layers) visit(l.layers);
+			} catch (e) { /* ignore */ }
+		}
+	};
+	visit(doc.layers);
+	return [...out];
+}
+
+//---------------------------------------------------------------------------
+// 設定の永続化 (お気に入りフォント等)
+//
+// webview では localStorage が使えないので、プラグインのデータフォルダに
+// JSON で置く。
+//---------------------------------------------------------------------------
+
+const PREFS_FILE = "prefs.json";
+
+async function readPrefs() {
+	try {
+		const { localFileSystem } = require("uxp").storage;
+		const folder = await localFileSystem.getDataFolder();
+		const file = await folder.getEntry(PREFS_FILE);
+		return JSON.parse(await file.read()) || {};
+	} catch (e) {
+		return {};      // まだ無い / 読めない
+	}
+}
+
+async function writePrefs(patch) {
+	try {
+		const { localFileSystem } = require("uxp").storage;
+		const prev = await readPrefs();
+		const next = { ...prev, ...patch };
+		const folder = await localFileSystem.getDataFolder();
+		const file = await folder.createFile(PREFS_FILE, { overwrite: true });
+		await file.write(JSON.stringify(next));
+		return true;
+	} catch (e) {
+		console.error("[psdtext] writePrefs failed:", e);
+		return false;
+	}
 }
 
 //---------------------------------------------------------------------------

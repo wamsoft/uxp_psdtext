@@ -197,12 +197,22 @@ input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
 	border-radius: 3px;
 	box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
 }
+.font-group {
+	padding: 3px 8px 2px;
+	font-size: 10px; color: var(--fg-dim);
+	background: var(--bg3);
+	position: sticky; top: 0;
+}
 .font-item {
-	display: flex; justify-content: space-between; gap: 10px;
+	display: flex; align-items: center; gap: 8px;
 	padding: 3px 8px; cursor: pointer; white-space: nowrap;
 }
-.font-item .hint { overflow: hidden; text-overflow: ellipsis; }
+.font-item .font-main { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.font-item .hint { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 .font-item:hover, .font-item.active { background: var(--hit); }
+.font-star { flex: none; cursor: pointer; color: var(--fg-dim); }
+.font-star.on { color: #e0b040; }
+.font-star:hover { color: #e0b040; }
 
 /*-- ヘルプ ----------------------------------------------------------------*/
 

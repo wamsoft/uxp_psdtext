@@ -128,9 +128,15 @@ const state = {
 
 const treeLog = [];   ///< 診断用: 受信したツリーの履歴 (D86 = doc有り86行, -0 = doc無し)
 
+let prefsLoaded = false;
+
 function applyTree(msg) {
 	treeLog.push((msg.doc ? 'D' : '-') + (msg.rows || []).length);
 	if (treeLog.length > 8) treeLog.shift();
+	if (!prefsLoaded) {          // 接続が立った最初のタイミングで設定を読む
+		prefsLoaded = true;
+		loadPrefs();
+	}
 	state.connected = true;
 	state.lastError = msg.message || '';
 	state.doc = msg.doc;
@@ -357,6 +363,7 @@ function openEditDialog(id) {
 	$('#editDialog').hidden = false;
 	$('#editText').focus();
 	ensureFonts();
+	refreshUsedFonts();
 	loadEditStyle(id);
 }
 
@@ -754,17 +761,68 @@ function resolveFontPs(inputEl) {
 	return f ? f.ps : v;   // 見つからなければ PS 名の手入力とみなす
 }
 
+//--- お気に入り / 使用中フォント -------------------------------------------
+
+let favFonts = new Set();   ///< お気に入り (PS 名)。パネル側の prefs.json に永続化
+let usedFonts = [];         ///< いまのドキュメントで使われている PS 名
+
+function fontByPs(ps) {
+	return fontsCache.find(f => f.ps === ps) || { ps, family: ps, style: '' };
+}
+
+async function loadPrefs() {
+	try {
+		const res = await request('getPrefs');
+		favFonts = new Set((res.prefs || {}).favFonts || []);
+	} catch (e) { /* 無ければ空のまま */ }
+}
+
+function saveFavFonts() {
+	request('setPrefs', { prefs: { favFonts: [...favFonts] } }).catch(() => {});
+}
+
+/// ドキュメントで使用中のフォントを取り直す (ダイアログを開くたび)
+async function refreshUsedFonts() {
+	try {
+		const res = await request('getUsedFonts');
+		usedFonts = res.fonts || [];
+	} catch (e) { /* 前回の値のまま */ }
+}
+
+/// ドロップダウンの中身。検索なし = お気に入り + 使用中だけの短いリスト。
+/// 検索あり = 全フォントから探す (お気に入り/使用中のヒットを先頭に)。
+function comboGroups(q) {
+	if (!q) {
+		const fav = [...favFonts].map(fontByPs);
+		const used = usedFonts.filter(ps => !favFonts.has(ps)).map(fontByPs);
+		const groups = [];
+		if (fav.length) groups.push({ header: tr('font.fav'), items: fav });
+		if (used.length) groups.push({ header: tr('font.used'), items: used });
+		// どちらも空なら全フォント (初回はここから ☆ で登録してもらう)
+		if (!groups.length) groups.push({ header: tr('font.all'), items: [...fontsCache] });
+		return groups;
+	}
+	const match = f => fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q);
+	const prio = [...new Set([...favFonts, ...usedFonts])].map(fontByPs).filter(match);
+	const prioSet = new Set(prio.map(f => f.ps));
+	const rest = fontsCache.filter(f => !prioSet.has(f.ps) && match(f));
+	const groups = [];
+	if (prio.length) groups.push({ header: tr('font.favused'), items: prio });
+	if (rest.length) groups.push({ header: tr('font.all'), items: rest });
+	return groups;
+}
+
 function attachFontCombo(inputEl, onChange) {
 	const drop = document.createElement('div');
 	drop.className = 'font-drop';
 	drop.hidden = true;
 	inputEl.parentElement.appendChild(drop);
-	let items = [], active = -1;
+	let items = [], rows = [], active = -1, lastFiltered = false;
 
 	const hide = () => { drop.hidden = true; active = -1; };
 	const markActive = () => {
-		[...drop.children].forEach((c, i) => c.classList.toggle('active', i === active));
-		if (active >= 0) drop.children[active].scrollIntoView({ block: 'nearest' });
+		rows.forEach((c, i) => c.classList.toggle('active', i === active));
+		if (active >= 0) rows[active].scrollIntoView({ block: 'nearest' });
 	};
 	const pick = (i) => {
 		const f = items[i];
@@ -773,28 +831,47 @@ function attachFontCombo(inputEl, onChange) {
 		hide();
 		if (onChange) onChange();
 	};
-	/// filtered=false ならフィルタせず全件出す (開いた直後用)。
-	/// 現在の選択 (dataset.ps) があればそこへスクロールして目印を付ける。
 	const show = (filtered) => {
+		lastFiltered = filtered;
 		const q = filtered ? inputEl.value.trim().toLowerCase() : '';
-		items = q
-			? fontsCache.filter(f =>
-				fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q))
-			: [...fontsCache];
+		const groups = comboGroups(q);
+		items = []; rows = [];
 		drop.textContent = '';
-		items.forEach((f, i) => {
-			const d = document.createElement('div');
-			d.className = 'font-item';
-			const main = document.createElement('span');
-			main.textContent = fontLabel(f);
-			const sub = document.createElement('span');
-			sub.className = 'hint';
-			sub.textContent = f.ps;
-			d.append(main, sub);
-			// blur より先に拾いたいので mousedown
-			d.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); });
-			drop.appendChild(d);
-		});
+		for (const g of groups) {
+			const h = document.createElement('div');
+			h.className = 'font-group';
+			h.textContent = g.header;
+			drop.appendChild(h);
+			for (const f of g.items) {
+				const i = items.length;
+				items.push(f);
+				const d = document.createElement('div');
+				d.className = 'font-item';
+				const star = document.createElement('span');
+				star.className = 'font-star' + (favFonts.has(f.ps) ? ' on' : '');
+				star.textContent = favFonts.has(f.ps) ? '★' : '☆';
+				star.title = tr('font.star.title');
+				// ☆ は選択せずお気に入りだけ切り替える (blur より先に拾う)
+				star.addEventListener('mousedown', (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					if (favFonts.has(f.ps)) favFonts.delete(f.ps);
+					else favFonts.add(f.ps);
+					saveFavFonts();
+					show(lastFiltered);
+				});
+				const main = document.createElement('span');
+				main.className = 'font-main';
+				main.textContent = fontLabel(f);
+				const sub = document.createElement('span');
+				sub.className = 'hint';
+				sub.textContent = f.ps;
+				d.append(star, main, sub);
+				d.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); });
+				drop.appendChild(d);
+				rows.push(d);
+			}
+		}
 		active = inputEl.dataset.ps
 			? items.findIndex(f => f.ps === inputEl.dataset.ps) : -1;
 		if (active >= 0) markActive();
@@ -833,6 +910,7 @@ function openStyleDialog() {
 	setStatus('#stStatus', '');
 	$('#styleDialog').hidden = false;
 	ensureFonts();
+	refreshUsedFonts();
 }
 
 function closeStyleDialog() {
@@ -1041,6 +1119,15 @@ function installMock() {
 				} else if (msg.type === 'getStyle') {
 					onMessage({ type: 'style', reqId: msg.reqId,
 						style: { font: 'ArialMT', size: 24, color: '#ff8800', align: 'center' } });
+				} else if (msg.type === 'getUsedFonts') {
+					onMessage({ type: 'usedFonts', reqId: msg.reqId,
+						fonts: ['ArialMT', 'HiraginoSans-W3'] });
+				} else if (msg.type === 'getPrefs') {
+					onMessage({ type: 'prefs', reqId: msg.reqId,
+						prefs: JSON.parse(sessionStorage.getItem('mockPrefs') || '{}') });
+				} else if (msg.type === 'setPrefs') {
+					sessionStorage.setItem('mockPrefs', JSON.stringify(msg.prefs || {}));
+					onMessage({ type: 'prefsSaved', reqId: msg.reqId, ok: true });
 				} else if (msg.type === 'applyStyle') {
 					onMessage({ type: 'styleResult', reqId: msg.reqId, applied: msg.ids.length, errors: [] });
 					onMessage({ type: 'tree', doc: { id: 1, name: 'mock.psd' }, rows: rows.map(r => ({ ...r })) });
