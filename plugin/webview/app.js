@@ -773,11 +773,14 @@ function attachFontCombo(inputEl, onChange) {
 		hide();
 		if (onChange) onChange();
 	};
-	const show = () => {
-		const q = inputEl.value.trim().toLowerCase();
-		items = fontsCache.filter(f =>
-			!q || fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q)
-		).slice(0, 100);
+	/// filtered=false ならフィルタせず全件出す (開いた直後用)。
+	/// 現在の選択 (dataset.ps) があればそこへスクロールして目印を付ける。
+	const show = (filtered) => {
+		const q = filtered ? inputEl.value.trim().toLowerCase() : '';
+		items = q
+			? fontsCache.filter(f =>
+				fontLabel(f).toLowerCase().includes(q) || f.ps.toLowerCase().includes(q))
+			: [...fontsCache];
 		drop.textContent = '';
 		items.forEach((f, i) => {
 			const d = document.createElement('div');
@@ -792,16 +795,18 @@ function attachFontCombo(inputEl, onChange) {
 			d.addEventListener('mousedown', (e) => { e.preventDefault(); pick(i); });
 			drop.appendChild(d);
 		});
-		active = -1;
+		active = inputEl.dataset.ps
+			? items.findIndex(f => f.ps === inputEl.dataset.ps) : -1;
+		if (active >= 0) markActive();
 		drop.hidden = !items.length;
 	};
 
 	inputEl.addEventListener('input', () => {
 		inputEl.dataset.ps = '';
-		show();
+		show(true);
 		if (onChange) onChange();
 	});
-	inputEl.addEventListener('focus', () => { ensureFonts().then(show); });
+	inputEl.addEventListener('focus', () => { ensureFonts().then(() => show(false)); });
 	inputEl.addEventListener('blur', () => setTimeout(hide, 150));
 	inputEl.addEventListener('keydown', (e) => {
 		if (drop.hidden) return;
