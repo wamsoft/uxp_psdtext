@@ -12,7 +12,11 @@ Companion to [uxp_psdrename](https://github.com/wamsoft/uxp_psdrename)
 - **Layer tree** of the active document (text layers by default), kept in
   sync with Photoshop automatically; contents shown next to each layer
 - **Search & filter**: match layer paths and text contents
-- **Single edit**: double-click a text layer (or F2) for a textarea editor
+- **Single edit**: double-click a text layer (or F2) for a **WYSIWYG editor**
+  (powered by [Quill](https://quilljs.com)) — per-range bold / italic /
+  underline / size / color and per-line alignment render and edit as-is,
+  with undo/redo inside the editor; a "Tags" toggle switches to text-based
+  tag editing
 - **Bulk edit ("Edit all…")**: the target text layers in an editable table —
   **layer names and contents** both editable, changed rows are highlighted
   and only they are applied (rule-based bulk renaming lives in uxp_psdrename)
@@ -55,4 +59,5 @@ To run from source instead, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Bundles the [Quill](https://quilljs.com) editor
+(BSD 3-Clause, see `plugin/webview/vendor/quill.js.LICENSE.txt`).

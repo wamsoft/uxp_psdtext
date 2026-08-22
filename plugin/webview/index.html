@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PSD Text Edit</title>
+<link rel="stylesheet" href="./vendor/quill.core.css">
 <link rel="stylesheet" href="./style.css">
+<script src="./vendor/quill.js"></script>
 </head>
 <body>
 
@@ -69,13 +71,6 @@
 						<input type="text" id="editSize" class="num" inputmode="decimal" spellcheck="false"> pt</label>
 					<label><span data-i18n="style.color">Color</span>
 						<input type="color" id="editColor" value="#ffffff"></label>
-					<label><span data-i18n="style.align">Alignment</span>
-						<select id="editAlign">
-							<option value="" data-i18n="style.align.keep">(keep)</option>
-							<option value="left" data-i18n="style.align.left">Left</option>
-							<option value="center" data-i18n="style.align.center">Center</option>
-							<option value="right" data-i18n="style.align.right">Right</option>
-						</select></label>
 				</div>
 			</div>
 			<div class="row fmt-bar">
@@ -90,11 +85,20 @@
 				<input type="color" id="fmtColor" value="#ff0000" data-i18n-title="fmt.color.title">
 				<button id="fmtColorApply" class="mini" data-i18n="fmt.apply">Set</button>
 				<span class="fmt-sep"></span>
+				<button id="fmtAlL" class="mini" data-i18n-title="fmt.al.left">⇤</button>
+				<button id="fmtAlC" class="mini" data-i18n-title="fmt.al.center">↔</button>
+				<button id="fmtAlR" class="mini" data-i18n-title="fmt.al.right">⇥</button>
+				<button id="fmtAlJ" class="mini" data-i18n-title="fmt.al.justify">≡</button>
+				<span class="fmt-sep"></span>
 				<button id="fmtReset" class="mini" data-i18n="fmt.reset"
 					data-i18n-title="fmt.reset.title">Reset</button>
-				<span id="fmtInfo" class="hint" data-i18n="fmt.hint"></span>
+				<span class="spacer"></span>
+				<button id="fmtMode" class="mini" data-i18n="fmt.mode.tag"
+					data-i18n-title="fmt.mode.title">Tags</button>
+				<span id="fmtInfo" class="hint"></span>
 			</div>
-			<div id="editRich" class="rich-edit" contenteditable="true" spellcheck="false"></div>
+			<div id="editRich" class="rich-edit"></div>
+			<textarea id="editTags" class="tag-edit" rows="8" spellcheck="false" hidden></textarea>
 			<div class="row" style="margin-top:8px; align-items:center">
 				<button id="editApply" class="primary" data-i18n="edit.apply">Apply</button>
 				<span id="editStatus" class="status"></span>
@@ -235,10 +239,14 @@
 				<b>下方向にまとめて流し込まれる</b>。1 列だけ貼ると貼った列 (名前 or 本文) に、
 				<b>2 列以上を貼ると先頭列が名前・最後の列が本文</b>になる。</p>
 				<h3>部分書式</h3>
-				<p>単体編集の本文は<b>見たまま編集</b>。太字や色はそのまま表示され、
-				<b>範囲を選択して B / I / U / サイズ / 色ボタン</b>で直接書式が変わる。
+				<p>単体編集の本文は<b>見たまま編集</b> (エディタエンジンは Quill)。
+				太字・色・フォント・サイズ・<b>行ごとの揃え</b>がそのまま表示され、
+				範囲選択 (またはカーソル位置から) B / I / U / サイズ / 色 / 揃えボタンで
+				直接変わる。エディタ内は Ctrl+Z / Ctrl+Y で取り消し・やり直しできる。
 				「基準へ」で選択範囲の書式を消せる。表示上の文字サイズは
 				基準が約 14px になるよう縮めてある (実サイズは pt の値のとおり)。</p>
+				<p>右上の<b>「タグ」ボタン</b>でタグ編集モードに切り替えられる
+				(一括置換など、テキストとして書式をいじりたいとき用)。</p>
 				<p>まとめて編集の表と TSV では、部分書式は<b>タグ表記</b>で運ばれる:
 				<code>[b]太字[/b]</code> <code>[size=96]大きく[/size]</code>
 				<code>[color=#FF0000]赤[/color]</code> <code>[font=...]</code> <code>[reset]</code>。
@@ -282,11 +290,14 @@
 				the column you pasted into (name or contents); <b>with two or more columns the
 				first becomes the name and the last the contents</b>.</p>
 				<h3>Per-range formatting</h3>
-				<p>The single-layer editor is <b>WYSIWYG</b> — bold and colors render as they
-				are, and <b>selecting a range and pressing the B / I / U / size / color
-				buttons</b> changes the formatting directly. "To base" clears the selection's
-				formatting. Displayed sizes are scaled so the base is about 14px
-				(the real pt values are unchanged).</p>
+				<p>The single-layer editor is <b>WYSIWYG</b> (powered by Quill). Bold, colors,
+				fonts, sizes and <b>per-line alignment</b> render as they are; select a range
+				(or just place the cursor) and use the B / I / U / size / color / alignment
+				buttons. Ctrl+Z / Ctrl+Y undo and redo inside the editor. "To base" clears
+				the selection's formatting. Displayed sizes are scaled so the base is about
+				14px (the real pt values are unchanged).</p>
+				<p>The <b>"Tags" button</b> switches to tag-editing mode, for when you want
+				to manipulate formatting as text (bulk replacements etc.).</p>
 				<p>The bulk-edit table and the TSV carry per-range formatting as
 				<b>tags</b>: <code>[b]bold[/b]</code> <code>[size=96]big[/size]</code>
 				<code>[color=#FF0000]red[/color]</code> <code>[font=...]</code>

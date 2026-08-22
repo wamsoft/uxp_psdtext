@@ -320,7 +320,20 @@ function simpleStyle(ts) {
 	};
 }
 
-/// {text, ranges:[{from,to,font,size,color,bold,italic,underline}]} を返す
+/// 記述子の揃えを UI 表現へ ("justifyLeft" などは 'justify' に寄せる)
+function alignOf(ps) {
+	const v = ps && ps.align && ps.align._value;
+	if (v === "center" || v === "right") return v;
+	if (typeof v === "string" && v.startsWith("justify")) return "justify";
+	return "left";
+}
+
+function alignEnum(v) {
+	const map = { left: "left", center: "center", right: "right", justify: "justifyLeft" };
+	return { _enum: "alignmentType", _value: map[v] || "left" };
+}
+
+/// {text, ranges, paragraphs:[{from,to,align}]} を返す
 async function readRich(id) {
 	try {
 		const tk = await getTextKeyDesc(id);
@@ -331,7 +344,12 @@ async function readRich(id) {
 			.map(r => ({ from: Math.max(0, r.from), to: Math.min(r.to, text.length),
 			             ...simpleStyle(r.textStyle) }))
 			.filter(r => r.to > r.from);
-		return { text, ranges };
+		const paragraphs = (tk.paragraphStyleRange || [])
+			.slice().sort((a, b) => a.from - b.from)
+			.map(p => ({ from: Math.max(0, p.from), to: Math.min(p.to, text.length),
+			             align: alignOf(p.paragraphStyle) }))
+			.filter(p => p.to > p.from);
+		return { text, ranges, paragraphs };
 	} catch (e) {
 		return { message: String(e && e.message || e) };
 	}
@@ -408,8 +426,29 @@ async function applyRichTo(id, rich) {
 	ranges[ranges.length - 1].to = len;   // 端数を出さない
 
 	const to = { _obj: "textLayer", textKey: psText, textStyleRange: ranges };
-	const prs = clampParagraphRanges(tk.paragraphStyleRange, len);
-	if (prs.length) to.paragraphStyleRange = prs;
+
+	// 段落範囲。webview から揃え付きで来ればそれを使い、無ければ元のものを
+	// 新しい本文長に合わせて詰めるだけにする
+	if (rich.paragraphs && rich.paragraphs.length) {
+		const ptemplate = (tk.paragraphStyleRange && tk.paragraphStyleRange[0] &&
+		                   tk.paragraphStyleRange[0].paragraphStyle) || {};
+		const prs = rich.paragraphs
+			.map(p => ({
+				_obj: "paragraphStyleRange",
+				from: Math.max(0, Math.min(p.from, len)),
+				to: Math.min(p.to, len),
+				paragraphStyle: { ...JSON.parse(JSON.stringify(ptemplate)),
+				                  _obj: "paragraphStyle", align: alignEnum(p.align) },
+			}))
+			.filter(p => p.to > p.from);
+		if (prs.length) {
+			prs[prs.length - 1].to = len;
+			to.paragraphStyleRange = prs;
+		}
+	} else {
+		const prs = clampParagraphRanges(tk.paragraphStyleRange, len);
+		if (prs.length) to.paragraphStyleRange = prs;
+	}
 
 	await action.batchPlay([{
 		_obj: "set",
