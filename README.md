@@ -47,11 +47,15 @@ To run from source instead, see [DEVELOPMENT.md](DEVELOPMENT.md).
 ## Usage
 
 1. Open a PSD — the text layers appear automatically
-2. Double-click a layer to edit it on its own, or click **Edit all…**
-   for the table
-3. In the table: edit cells directly, or *Copy as TSV* → edit in a
-   spreadsheet → copy the contents column → paste back into the first cell
+2. The **✎** at the end of a row (or double-click / F2) opens the
+   single-layer editor; **Edit all…** opens the table
+3. The table round-trips with spreadsheets: *Copy table* → edit in
+   Excel → *Paste TSV* (Ctrl+V in a cell starts the fill there instead)
 4. **Apply** sends the changed rows; Ctrl+Z reverts everything at once
+
+Font fields list only favorites + the fonts used in the document;
+search and register from all installed fonts via the ★ button.
+Press the **?** button in the panel for the full guide.
 
 ## License
 

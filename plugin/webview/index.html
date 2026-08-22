@@ -198,9 +198,10 @@
 				<b>本文を書き換えた行は途中の書式が外れる</b> (件数を報告)。
 				規則ベースの一括リネームは姉妹ツールの PSD Power Rename へ。</p>
 				<p><b>見出しのチェック</b> (またはプリセットボタン) で、コピー / 貼り付けに
-				効かせる列を選ぶ。<b>表をコピー</b>は対象列だけを TSV で書き出し、
-				Excel で編集して<b>セルに貼り付けると、そのセルを起点に右の対象列 →
-				下の行へ流し込まれる</b>。編集そのものはチェックに関係なくいつでもできる。</p>
+				効かせる列を選ぶ。<b>表をコピー</b>は対象列だけを TSV で書き出す。
+				Excel で編集したら<b>「TSV を貼り付け」</b>で先頭行から流し込むか、
+				<b>セルに Ctrl+V</b> でそのセルを起点に右の対象列 → 下の行へ流し込む。
+				編集そのものはチェックに関係なくいつでもできる。</p>
 				<h3>部分書式</h3>
 				<p>単体編集の本文は<b>見たまま編集</b> (エディタエンジンは Quill)。
 				太字・色・フォント・サイズ・<b>行ごとの揃え</b>がそのまま表示され、
@@ -216,6 +217,9 @@
 				文字としての <code>[</code> は <code>[[</code> と書く。</p>
 				<h3>その他</h3>
 				<ul>
+					<li>フォント欄の候補は<b>お気に入り + このドキュメントで使用中</b>のものだけ。
+						全フォントからの検索と登録は <b>★ ボタン</b>
+						(編集画面の基準欄の隣、シートのフォント ▾ →「お気に入りを管理…」) から</li>
 					<li>セル内の改行はそのままレイヤの改行になる</li>
 					<li>再読込: レイヤ一覧を取り直す (通常は自動追従するので不要)</li>
 					<li><b>Ctrl+D</b>: 自己診断行の表示 (不具合調査用)</li>
@@ -244,10 +248,11 @@
 				drops it</b> (reported per row). For rule-based bulk renaming see the sister
 				tool PSD Power Rename.</p>
 				<p>The <b>header checkboxes</b> (or the preset buttons) choose which columns
-				copy &amp; paste touch. <b>Copy table</b> writes the target columns as TSV;
-				edit in Excel and <b>paste into a cell — it flows right through the target
-				columns and down the rows from that cell</b>. Editing itself always works,
-				regardless of the checkboxes.</p>
+				copy &amp; paste touch. <b>Copy table</b> writes the target columns as TSV.
+				After editing in Excel, use <b>Paste TSV</b> to fill from the first row, or
+				<b>Ctrl+V in a cell</b> to flow right through the target columns and down the
+				rows from that cell. Editing itself always works, regardless of the
+				checkboxes.</p>
 				<h3>Per-range formatting</h3>
 				<p>The single-layer editor is <b>WYSIWYG</b> (powered by Quill). Bold, colors,
 				fonts, sizes and <b>per-line alignment</b> render as they are; select a range
@@ -263,6 +268,9 @@
 				<code>[</code> is written <code>[[</code>.</p>
 				<h3>Misc</h3>
 				<ul>
+					<li>Font fields list only <b>favorites + fonts used in this document</b>;
+						search and register from all fonts via the <b>★ button</b> (next to the
+						base row in the editor, or the font cell ▾ → "Manage favorites…")</li>
 					<li>Line breaks inside a cell become line breaks in the layer</li>
 					<li>Reload: fetch the layer list again (normally unnecessary — it tracks automatically)</li>
 					<li><b>Ctrl+D</b>: toggle the self-diagnosis line (for troubleshooting)</li>
