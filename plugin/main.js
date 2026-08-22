@@ -85,6 +85,18 @@ async function handleMessage(msg) {
 		sendTree();          // 適用後の最新状態を続けて送る
 		break;
 	}
+	case "getFonts":
+		send({ type: "fonts", reqId: msg.reqId, fonts: listFonts() });
+		break;
+	case "getStyle":
+		send({ type: "style", reqId: msg.reqId, ...readStyle(msg.id) });
+		break;
+	case "applyStyle": {
+		const result = await applyStyle(msg.ids || [], msg.style || {});
+		send({ type: "styleResult", reqId: msg.reqId, ...result });
+		sendTree();
+		break;
+	}
 	default:
 		break;
 	}
@@ -213,6 +225,117 @@ async function applyTexts(items) {
 				await ctx.hostControl.resumeHistory(hist);
 			}
 		}, { commandName: "Edit Text" });
+	} finally {
+		applying = false;
+	}
+	return { applied, errors };
+}
+
+//---------------------------------------------------------------------------
+// 初期書式 (レイヤ全体のフォント / サイズ / 色 / 揃え)
+//
+// characterStyle / paragraphStyle の DOM API を使う。文字範囲ごとの
+// 部分書式はここでは扱わない (レイヤ全体の初期値だけ)。
+//---------------------------------------------------------------------------
+
+function listFonts() {
+	const out = [];
+	try {
+		for (const f of app.fonts) {
+			try {
+				out.push({ ps: f.postScriptName, family: f.family, style: f.style });
+			} catch (e) { /* 読めないフォントは飛ばす */ }
+		}
+	} catch (e) {
+		console.error("[psdtext] listFonts failed:", e);
+	}
+	return out;
+}
+
+function toHex2(n) {
+	return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+}
+
+/// レイヤの初期書式を読む。読めない属性は黙って欠落させる
+function readStyle(id) {
+	try {
+		const doc = app.activeDocument;
+		const l = doc && findLayerById(doc.layers, id);
+		if (!l || !l.textItem) return { message: "text layer not found: " + id };
+		const st = {};
+		const cs = l.textItem.characterStyle;
+		try { st.font = cs.font || ""; } catch (e) { /* skip */ }
+		try { st.size = cs.size; } catch (e) { /* skip */ }
+		try {
+			const c = cs.color;
+			st.color = "#" + toHex2(c.rgb.red) + toHex2(c.rgb.green) + toHex2(c.rgb.blue);
+		} catch (e) { /* skip */ }
+		try {
+			const j = String(l.textItem.paragraphStyle.justification || "").toLowerCase();
+			if (j.startsWith("left")) st.align = "left";
+			else if (j.startsWith("center")) st.align = "center";
+			else if (j.startsWith("right")) st.align = "right";
+		} catch (e) { /* skip */ }
+		return { style: st };
+	} catch (e) {
+		return { message: String(e && e.message || e) };
+	}
+}
+
+function makeSolidColor(hex) {
+	const ps = require("photoshop");
+	const Ctor = (ps.app && ps.app.SolidColor) || ps.SolidColor;
+	if (!Ctor) throw new Error("SolidColor class not available");
+	const c = new Ctor();
+	c.rgb.red = parseInt(hex.slice(1, 3), 16);
+	c.rgb.green = parseInt(hex.slice(3, 5), 16);
+	c.rgb.blue = parseInt(hex.slice(5, 7), 16);
+	return c;
+}
+
+function justificationOf(align) {
+	const J = require("photoshop").constants.Justification;
+	return align === "left" ? J.LEFT : align === "center" ? J.CENTER : J.RIGHT;
+}
+
+/// ids のテキストレイヤへ、style の指定されたフィールドだけをまとめて適用。
+/// 履歴 1 段。style: {font?, size?, color? (#rrggbb), align? (left|center|right)}
+async function applyStyle(ids, style) {
+	const doc = app.activeDocument;
+	if (!doc) return { applied: 0, errors: [{ message: "no document" }] };
+
+	let applied = 0;
+	const errors = [];
+	applying = true;
+	try {
+		await core.executeAsModal(async (ctx) => {
+			const hist = await ctx.hostControl.suspendHistory({
+				documentID: doc.id,
+				name: "Edit Text Style",
+			});
+			try {
+				for (const id of ids) {
+					try {
+						const l = findLayerById(doc.layers, id);
+						if (!l || !l.textItem) throw new Error("text layer not found: " + id);
+						const cs = l.textItem.characterStyle;
+						if (typeof style.font === "string" && style.font) cs.font = style.font;
+						if (typeof style.size === "number" && style.size > 0) cs.size = style.size;
+						if (typeof style.color === "string" && /^#[0-9a-fA-F]{6}$/.test(style.color)) {
+							cs.color = makeSolidColor(style.color);
+						}
+						if (style.align === "left" || style.align === "center" || style.align === "right") {
+							l.textItem.paragraphStyle.justification = justificationOf(style.align);
+						}
+						applied++;
+					} catch (e) {
+						errors.push({ id, message: String(e && e.message || e) });
+					}
+				}
+			} finally {
+				await ctx.hostControl.resumeHistory(hist);
+			}
+		}, { commandName: "Edit Text Style" });
 	} finally {
 		applying = false;
 	}

@@ -223,6 +223,7 @@ function renderAll() {
 	$('#noDocDetail').textContent = state.lastError || diag;
 	$('#sheetBtn').disabled = !state.doc;
 	$('#selTextsBtn').disabled = !state.doc;
+	$('#styleBtn').disabled = !state.doc;
 	$('#selCount').textContent =
 		state.multi.size > 1 ? tr('sel.count', state.multi.size) : '';
 	renderTree();
@@ -650,6 +651,110 @@ function refreshSheetFromTree() {
 }
 
 //---------------------------------------------------------------------------
+// 初期書式ダイアログ
+//
+// チェックした項目 (フォント / サイズ / 色 / 揃え) だけを、対象テキスト
+// レイヤ全体の初期書式としてまとめて適用する。部分書式には触らない。
+//---------------------------------------------------------------------------
+
+let fontsLoaded = false;
+
+function styleTargets() {
+	const mode = $('#stTarget').value;
+	return state.rows.filter(r => r.text && (mode === 'text' || state.multi.has(r.id)));
+}
+
+/// フォント一覧は重いので、最初にダイアログを開いたとき 1 回だけ取る
+async function ensureFonts() {
+	if (fontsLoaded) return;
+	try {
+		const res = await request('getFonts');
+		const dl = $('#fontList');
+		dl.textContent = '';
+		for (const f of res.fonts || []) {
+			const o = document.createElement('option');
+			o.value = f.ps;
+			o.label = f.family + (f.style ? ' ' + f.style : '');
+			dl.appendChild(o);
+		}
+		fontsLoaded = true;
+	} catch (e) { /* 一覧が無くても手入力はできる */ }
+}
+
+function selectedTextLayer() {
+	const r = state.selected !== null ? state.byId.get(state.selected) : null;
+	return r && r.text ? r : null;
+}
+
+function openStyleDialog() {
+	if (!state.doc) return;
+	$('#stTarget').value =
+		[...state.multi].some(id => (state.byId.get(id) || {}).text) ? 'sel' : 'text';
+	updateStyleCounts();
+	setStatus('#stStatus', '');
+	$('#styleDialog').hidden = false;
+	ensureFonts();
+}
+
+function closeStyleDialog() {
+	$('#styleDialog').hidden = true;
+}
+
+function updateStyleCounts() {
+	const n = styleTargets().length;
+	$('#stCount').textContent = tr('style.count', n);
+	const any = ['#stUseFont', '#stUseSize', '#stUseColor', '#stUseAlign']
+		.some(id => $(id).checked);
+	$('#stApply').disabled = !n || !any;
+	$('#stFrom').disabled = !selectedTextLayer();
+}
+
+/// 最後に選んだテキストレイヤの書式を欄に読み込む (書式コピー相当)
+async function readStyleFromSelected() {
+	const src = selectedTextLayer();
+	if (!src) return;
+	setStatus('#stStatus', tr('style.working'));
+	try {
+		const res = await request('getStyle', { id: src.id });
+		const st = res.style || {};
+		if (st.font) { $('#stFont').value = st.font; $('#stUseFont').checked = true; }
+		if (typeof st.size === 'number') { $('#stSize').value = st.size; $('#stUseSize').checked = true; }
+		if (st.color) { $('#stColor').value = st.color; $('#stUseColor').checked = true; }
+		if (st.align) { $('#stAlign').value = st.align; $('#stUseAlign').checked = true; }
+		setStatus('#stStatus', res.message ? String(res.message) : tr('style.read', src.name),
+		          res.message ? 'error' : 'ok');
+	} catch (e) {
+		setStatus('#stStatus', String(e.message || e), 'error');
+	}
+	updateStyleCounts();
+}
+
+async function applyStyleDialog() {
+	const targets = styleTargets();
+	const style = {};
+	if ($('#stUseFont').checked && $('#stFont').value.trim()) style.font = $('#stFont').value.trim();
+	if ($('#stUseSize').checked) {
+		const v = parseFloat($('#stSize').value);
+		if (v > 0) style.size = v;
+	}
+	if ($('#stUseColor').checked) style.color = $('#stColor').value;
+	if ($('#stUseAlign').checked) style.align = $('#stAlign').value;
+	if (!targets.length || !Object.keys(style).length) return;
+	setStatus('#stStatus', tr('style.working'));
+	$('#stApply').disabled = true;
+	try {
+		const res = await request('applyStyle', { ids: targets.map(r => r.id), style });
+		const failed = (res.errors || []).length;
+		setStatus('#stStatus', failed ? tr('style.doneFailed', res.applied || 0, failed)
+		                              : tr('style.done', res.applied || 0),
+		          failed ? 'error' : 'ok');
+	} catch (e) {
+		setStatus('#stStatus', String(e.message || e), 'error');
+	}
+	updateStyleCounts();
+}
+
+//---------------------------------------------------------------------------
 // ヘルプ
 //---------------------------------------------------------------------------
 
@@ -695,11 +800,13 @@ function wire() {
 	$('#helpBtn').addEventListener('click', openHelp);
 	$('#selTextsBtn').addEventListener('click', selectAllTexts);
 	$('#sheetBtn').addEventListener('click', openSheetDialog);
+	$('#styleBtn').addEventListener('click', openStyleDialog);
 
 	// 各モーダルの × とオーバーレイクリック
 	for (const [dlg, close] of [
 		['#editDialog', closeEditDialog],
 		['#sheetDialog', closeSheetDialog],
+		['#styleDialog', closeStyleDialog],
 		['#helpDialog', closeHelp],
 	]) {
 		$(dlg).querySelector('[data-close]').addEventListener('click', close);
@@ -714,6 +821,12 @@ function wire() {
 	$('#shCopy').addEventListener('click', copySheet);
 	$('#shApply').addEventListener('click', applySheet);
 
+	$('#stTarget').addEventListener('change', updateStyleCounts);
+	for (const id of ['#stUseFont', '#stUseSize', '#stUseColor', '#stUseAlign'])
+		$(id).addEventListener('change', updateStyleCounts);
+	$('#stFrom').addEventListener('click', readStyleFromSelected);
+	$('#stApply').addEventListener('click', applyStyleDialog);
+
 	document.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 'd') {          // 自己診断行の表示切り替え
 			e.preventDefault();
@@ -723,6 +836,7 @@ function wire() {
 		}
 		if (e.key === 'Escape') {
 			if (!$('#helpDialog').hidden) closeHelp();
+			else if (!$('#styleDialog').hidden) closeStyleDialog();
 			else if (!$('#sheetDialog').hidden) closeSheetDialog();
 			else if (!$('#editDialog').hidden) closeEditDialog();
 			return;
@@ -756,9 +870,23 @@ function installMock() {
 				if (msg.type === 'applyTexts') {
 					for (const it of msg.items) {
 						const r = rows.find(x => x.id === it.id);
-						if (r) r.body = it.text;
+						if (!r) continue;
+						if (typeof it.text === 'string') r.body = it.text;
+						if (typeof it.name === 'string' && it.name.trim()) r.name = it.name;
 					}
 					onMessage({ type: 'textResult', reqId: msg.reqId, applied: msg.items.length, errors: [] });
+					onMessage({ type: 'tree', doc: { id: 1, name: 'mock.psd' }, rows: rows.map(r => ({ ...r })) });
+				} else if (msg.type === 'getFonts') {
+					onMessage({ type: 'fonts', reqId: msg.reqId, fonts: [
+						{ ps: 'ArialMT', family: 'Arial', style: 'Regular' },
+						{ ps: 'Arial-BoldMT', family: 'Arial', style: 'Bold' },
+						{ ps: 'HiraginoSans-W3', family: 'Hiragino Sans', style: 'W3' },
+					] });
+				} else if (msg.type === 'getStyle') {
+					onMessage({ type: 'style', reqId: msg.reqId,
+						style: { font: 'ArialMT', size: 24, color: '#ff8800', align: 'center' } });
+				} else if (msg.type === 'applyStyle') {
+					onMessage({ type: 'styleResult', reqId: msg.reqId, applied: msg.ids.length, errors: [] });
 					onMessage({ type: 'tree', doc: { id: 1, name: 'mock.psd' }, rows: rows.map(r => ({ ...r })) });
 				} else {
 					onMessage({ type: 'tree', reqId: msg.reqId, doc: { id: 1, name: 'mock.psd' }, rows: rows.map(r => ({ ...r })) });

@@ -177,6 +177,17 @@ table.sheet tr.hit td { background: var(--hit); }
 	min-height: 4.5em; resize: vertical;
 }
 
+/*-- 初期書式ダイアログ ----------------------------------------------------*/
+
+.st-fields {
+	display: flex; flex-direction: column; gap: 8px;
+	padding: 8px; background: var(--bg); border-radius: 4px;
+}
+.st-fields .row { flex-wrap: nowrap; }
+.st-name { min-width: 4.5em; }
+input.num { width: 64px; }
+input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
+
 /*-- ヘルプ ----------------------------------------------------------------*/
 
 .help-body { line-height: 1.6; }
