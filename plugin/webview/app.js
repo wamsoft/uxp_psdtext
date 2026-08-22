@@ -577,17 +577,6 @@ async function applySheet() {
 	updateSheetCounts();
 }
 
-function revertSheet() {
-	for (const r of sheetRows) {
-		r.val = r.orig;
-		if (r.el) {
-			r.el.value = r.val;
-			r.el.closest('tr').classList.remove('hit');
-		}
-	}
-	updateSheetCounts();
-}
-
 /// PS 側の更新が届いたら、未編集の行だけ追従させる (編集中の値は守る)
 function refreshSheetFromTree() {
 	if ($('#sheetDialog').hidden || !sheetRows.length) return;
@@ -666,14 +655,10 @@ function wire() {
 	}
 
 	$('#editApply').addEventListener('click', applyEdit);
-	$('#editRevert').addEventListener('click', () => {
-		if (editTarget) $('#editText').value = editTarget.orig;
-	});
 
 	$('#shTarget').addEventListener('change', buildSheet);
 	$('#shCopy').addEventListener('click', copySheet);
 	$('#shApply').addEventListener('click', applySheet);
-	$('#shRevert').addEventListener('click', revertSheet);
 
 	document.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 'd') {          // 自己診断行の表示切り替え

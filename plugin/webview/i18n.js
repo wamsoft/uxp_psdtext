@@ -30,7 +30,6 @@ const DICT = {
 		'sel.count':       '{0} レイヤ選択中',
 
 		'edit.apply':      '適用',
-		'edit.revert':     '元に戻す',
 		'edit.done':       '反映しました',
 		'edit.working':    '処理中…',
 
@@ -47,7 +46,6 @@ const DICT = {
 		'sheet.count':     '{0} 枚のうち {1} 枚が変わる',
 		'sheet.apply':     '適用',
 		'sheet.applyN':    '{0} 枚に適用',
-		'sheet.revert':    '全部元に戻す',
 		'sheet.done':      '{0} 枚に反映しました (履歴 1 回で取り消せます)',
 		'sheet.doneFailed': '{0} 枚に反映 / {1} 枚 失敗',
 		'sheet.working':   '処理中…',
@@ -78,7 +76,6 @@ const DICT = {
 		'sel.count':       '{0} layer(s) selected',
 
 		'edit.apply':      'Apply',
-		'edit.revert':     'Revert',
 		'edit.done':       'Applied',
 		'edit.working':    'Working…',
 
@@ -95,7 +92,6 @@ const DICT = {
 		'sheet.count':     '{1} of {0} row(s) change',
 		'sheet.apply':     'Apply',
 		'sheet.applyN':    'Apply to {0} layer(s)',
-		'sheet.revert':    'Revert all',
 		'sheet.done':      'Applied to {0} layer(s) — one undo step',
 		'sheet.doneFailed': 'Applied to {0} / {1} failed',
 		'sheet.working':   'Working…',
