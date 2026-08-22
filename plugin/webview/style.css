@@ -210,9 +210,16 @@ input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
 .font-item .font-main { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .font-item .hint { max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 .font-item:hover, .font-item.active { background: var(--hit); }
-.font-star { flex: none; cursor: pointer; color: var(--fg-dim); }
+.font-star {
+	flex: none; cursor: pointer; color: var(--fg-dim);
+	padding: 0 3px;               /* 押しやすいように当たりを広く */
+}
 .font-star.on { color: #e0b040; }
-.font-star:hover { color: #e0b040; }
+.font-star:hover { color: #e0b040; transform: scale(1.2); }
+.font-hint {
+	padding: 4px 8px; font-size: 10px; color: var(--fg-dim);
+	border-top: 1px solid var(--border);
+}
 
 /*-- ヘルプ ----------------------------------------------------------------*/
 

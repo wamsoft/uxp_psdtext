@@ -872,6 +872,13 @@ function attachFontCombo(inputEl, onChange) {
 				rows.push(d);
 			}
 		}
+		// お気に入りが無いうちは ☆ の使い方をひとこと出しておく
+		if (!favFonts.size) {
+			const hint = document.createElement('div');
+			hint.className = 'font-hint';
+			hint.textContent = tr('font.hint');
+			drop.appendChild(hint);
+		}
 		active = inputEl.dataset.ps
 			? items.findIndex(f => f.ps === inputEl.dataset.ps) : -1;
 		if (active >= 0) markActive();
