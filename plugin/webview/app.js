@@ -1246,6 +1246,22 @@ function spreadIntoSheet(text, startRow, cols, note) {
 	setStatus('#shStatus', (note ? note + ' / ' : '') + tr('sheet.pasted', n));
 }
 
+/// 「TSV を貼り付け」ボタン。クリップボードを読んで先頭行から対象列へ流し込む。
+/// (セルを選んで Ctrl+V なら、そのセルが起点になる)
+async function pasteSheetFromClipboard() {
+	const cols = sheetColsOn();
+	if (!cols.length) { setStatus('#shStatus', tr('sheet.noCols'), 'error'); return; }
+	let text = '';
+	try {
+		text = await navigator.clipboard.readText();
+	} catch (e) {
+		setStatus('#shStatus', tr('sheet.pasteFail'), 'error');
+		return;
+	}
+	if (!text || !text.trim()) { setStatus('#shStatus', tr('sheet.pasteEmpty'), 'error'); return; }
+	spreadIntoSheet(text, 0, cols, '');
+}
+
 /// セルの中で受けた貼り付け。そのセルが起点になり、右へ「対象カラム」だけに流れる
 function onSheetPaste(e) {
 	const text = (e.clipboardData || window.clipboardData).getData('text');
@@ -1663,6 +1679,7 @@ function wire() {
 
 	$('#shTarget').addEventListener('change', buildSheet);
 	$('#shCopy').addEventListener('click', copySheet);
+	$('#shPaste').addEventListener('click', pasteSheetFromClipboard);
 	$('#shApply').addEventListener('click', applySheet);
 	// コピペ対象カラムのプリセット
 	for (const btn of document.querySelectorAll('[data-cols]')) {
