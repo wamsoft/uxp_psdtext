@@ -387,8 +387,11 @@ async function readRich(id) {
 	}
 }
 
-/// テンプレート (先頭ランの textStyle) に簡易スタイルを重ねる
-function buildTextStyle(template, st) {
+/// テンプレート (先頭ランの textStyle) に簡易スタイルを重ねる。
+/// vertical は縦書きか (下線を引く側が変わる:
+/// 横書き = underlineOnLeftInVertical / 縦書き = underlineOnRightInVertical。
+/// どちらも Photoshop 自身が書く値を実測して合わせたもの)
+function buildTextStyle(template, st, vertical) {
 	const ts = JSON.parse(JSON.stringify(template || {}));
 	ts._obj = "textStyle";
 	if (st.font) {
@@ -416,7 +419,9 @@ function buildTextStyle(template, st) {
 	ts.syntheticItalic = !!st.italic;
 	ts.underline = {
 		_enum: "underline",
-		_value: st.underline ? "underlineOnLeftInVertical" : "underlineOff",
+		_value: st.underline
+			? (vertical ? "underlineOnRightInVertical" : "underlineOnLeftInVertical")
+			: "underlineOff",
 	};
 	return ts;
 }
@@ -440,6 +445,7 @@ async function applyRichTo(id, rich) {
 	if (!tk) throw new Error("no textKey: " + id);
 	const template = (tk.textStyleRange && tk.textStyleRange[0] &&
 	                  tk.textStyleRange[0].textStyle) || {};
+	const vertical = !!(tk.orientation && tk.orientation._value === "vertical");
 	const psText = String(rich.text || "").replace(/\n/g, "\r");
 	const len = psText.length;
 
@@ -448,12 +454,12 @@ async function applyRichTo(id, rich) {
 			_obj: "textStyleRange",
 			from: Math.max(0, Math.min(r.from, len)),
 			to: Math.min(r.to, len),
-			textStyle: buildTextStyle(template, r),
+			textStyle: buildTextStyle(template, r, vertical),
 		}))
 		.filter(r => r.to > r.from);
 	if (!ranges.length) {
 		ranges = [{ _obj: "textStyleRange", from: 0, to: len,
-		            textStyle: buildTextStyle(template, simpleStyle(template)) }];
+		            textStyle: buildTextStyle(template, simpleStyle(template), vertical) }];
 	}
 	ranges[ranges.length - 1].to = len;   // 端数を出さない
 

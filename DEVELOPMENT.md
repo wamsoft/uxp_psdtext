@@ -78,7 +78,9 @@ identified only by Photoshop's persistent layer id; line endings are
 4. Elements with an explicit `display` need `.foo[hidden]{display:none}` or
    the `hidden` attribute silently stops working
 5. The descriptor's RGBColor uses `grain` for green; `underline` is an
-   enum (`underlineOnLeftInVertical` for on)
+   enum whose on-value depends on orientation: `underlineOnLeftInVertical`
+   for horizontal text, `underlineOnRightInVertical` for vertical (measured
+   from what Photoshop itself writes)
 6. UXP's `navigator.clipboard.readText()` can resolve to an object
    (`{"text/plain": ...}`) instead of a string — normalize both shapes.
    Reading on the panel side avoids the per-use Chromium permission
