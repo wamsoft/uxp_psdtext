@@ -1,0 +1,29 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build .ccx
+        run: node dev/build-ccx.mjs
+      - name: Check tag matches manifest version
+        run: |
+          VER=$(node -p "require('./plugin/manifest.json').version")
+          test "v$VER" = "${GITHUB_REF_NAME}" || {
+            echo "tag ${GITHUB_REF_NAME} != manifest v$VER"; exit 1; }
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.ccx
+          generate_release_notes: true

@@ -1,0 +1,36 @@
+{
+	"id": "jp.wamsoft.uxp.psdtext",
+	"name": "PSD Text Edit",
+	"version": "0.1.0",
+	"main": "index.html",
+	"manifestVersion": 5,
+	"host": {
+		"app": "PS",
+		"minVersion": "26.0.0"
+	},
+	"requiredPermissions": {
+		"network": {
+			"domains": [
+				"http://127.0.0.1:18999",
+				"http://localhost:18999"
+			]
+		},
+		"webview": {
+			"allow": "yes",
+			"domains": [],
+			"allowLocalRendering": "yes",
+			"enableMessageBridge": "localOnly"
+		}
+	},
+	"entrypoints": [
+		{
+			"type": "panel",
+			"id": "psdtext.panel",
+			"label": { "default": "Text Edit" },
+			"minimumSize": { "width": 360, "height": 400 },
+			"maximumSize": { "width": 2048, "height": 2048 },
+			"preferredDockedSize": { "width": 460, "height": 700 },
+			"preferredFloatingSize": { "width": 560, "height": 760 }
+		}
+	]
+}

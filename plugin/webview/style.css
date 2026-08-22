@@ -1,0 +1,221 @@
+/*---------------------------------------------------------------------------
+ * PSD Text Edit — webview UI
+ * Photoshop のダークパネルに馴染む配色。フレームワークなしの素の CSS。
+ *-------------------------------------------------------------------------*/
+
+:root {
+	--bg:        #232323;
+	--bg2:       #2b2b2b;
+	--bg3:       #333;
+	--border:    #444;
+	--fg:        #d6d6d6;
+	--fg-dim:    #909090;
+	--accent:    #3a79c4;
+	--accent-hi: #4a8ad6;
+	--ok:        #58a55c;
+	--err:       #d9605c;
+	--hit:       #2e4a68;
+	--bad:       #5a3434;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+	margin: 0; padding: 0; height: 100%;
+	background: var(--bg); color: var(--fg);
+	font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+	font-size: 12px;
+	overflow: hidden;
+}
+
+body { display: flex; flex-direction: column; }
+
+.hint { color: var(--fg-dim); font-size: 11px; }
+.spacer { flex: 1; }
+
+/*-- ヘッダ / ツールバー ---------------------------------------------------*/
+
+#topbar, #toolbar, #bottombar {
+	display: flex; align-items: center; gap: 6px;
+	padding: 5px 8px; flex: none;
+}
+#topbar { border-bottom: 1px solid var(--border); background: var(--bg2); }
+#bottombar { border-top: 1px solid var(--border); background: var(--bg2); }
+
+.doc-name {
+	font-weight: 600; overflow: hidden;
+	text-overflow: ellipsis; white-space: nowrap; max-width: 50%;
+}
+
+#toolbar input[type=search] {
+	flex: 1; min-width: 60px;
+}
+
+.toggle { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+
+/*-- 入力部品 --------------------------------------------------------------*/
+
+input, select, button, textarea {
+	font: inherit; color: var(--fg);
+	background: var(--bg3); border: 1px solid var(--border);
+	border-radius: 3px; padding: 3px 6px;
+}
+input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+
+button { cursor: pointer; }
+button:hover { background: #3d3d3d; }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: var(--accent-hi); }
+button.mini { padding: 2px 8px; font-size: 11px; }
+button.icon { border: none; background: none; padding: 2px 6px; }
+button.icon:hover { background: var(--bg3); }
+
+textarea { resize: vertical; width: 100%; }
+
+/*-- レイヤツリー ----------------------------------------------------------*/
+
+#tree { flex: 1; overflow: auto; padding: 2px 0; }
+
+.tree-row {
+	display: flex; align-items: center; gap: 4px;
+	padding: 2px 6px 2px 4px; cursor: default;
+	white-space: nowrap; user-select: none;
+}
+.tree-row:hover { background: var(--bg2); }
+.tree-row.sel { background: var(--hit); }
+.tree-row.multi { background: rgba(58, 121, 196, .25); }
+.tree-row.sel.multi { background: var(--hit); }
+.tree-row.hidden-layer { opacity: .45; }
+
+.twist { width: 12px; flex: none; text-align: center; color: var(--fg-dim); cursor: pointer; }
+.tree-icon { width: 16px; flex: none; text-align: center; }
+.tree-name { flex: none; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.tree-body {
+	flex: 1; overflow: hidden; text-overflow: ellipsis;
+	color: var(--fg-dim); padding-left: 6px;
+}
+
+.no-doc {
+	position: absolute; inset: 0;
+	display: flex; align-items: center; justify-content: center;
+	color: var(--fg-dim); background: var(--bg);
+}
+/* 要素に display を直接指定すると UA の [hidden]{display:none} が負けるので
+ * 必ず打ち消しを書く (psdrename での授業料) */
+.no-doc[hidden] { display: none; }
+.no-doc-inner { text-align: center; max-width: 90%; }
+.no-doc-inner p { margin: 4px 0; }
+#noDocDetail { white-space: pre-wrap; word-break: break-word; }
+
+/*-- モーダル --------------------------------------------------------------*/
+
+.modal {
+	position: fixed; inset: 0; z-index: 10;
+	background: rgba(0, 0, 0, .55);
+	display: flex; align-items: center; justify-content: center;
+}
+.modal[hidden] { display: none; }
+
+.modal-box {
+	background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+	display: flex; flex-direction: column;
+	max-height: 92vh; width: min(480px, 94vw);
+	box-shadow: 0 8px 30px rgba(0, 0, 0, .5);
+}
+.modal-box.wide { width: min(680px, 94vw); }
+
+.modal-head {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 8px 12px; border-bottom: 1px solid var(--border);
+	font-weight: 600;
+}
+
+.modal-body {
+	padding: 10px 12px; overflow: auto;
+	display: flex; flex-direction: column; gap: 8px;
+}
+
+.row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.row label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+
+/*-- 一覧編集シート --------------------------------------------------------*/
+
+.sheet-wrap {
+	overflow: auto; max-height: 52vh; min-height: 120px;
+	border: 1px solid var(--border); border-radius: 4px;
+}
+
+table.sheet { border-collapse: collapse; width: 100%; }
+table.sheet th, table.sheet td {
+	padding: 2px 6px; text-align: left;
+	border-bottom: 1px solid var(--bg3);
+	vertical-align: top;
+}
+table.sheet th {
+	position: sticky; top: 0; background: var(--bg3);
+	font-weight: 600; z-index: 1;
+}
+table.sheet tr.hit td { background: var(--hit); }
+
+.c-sh-name {
+	width: 30%; max-width: 200px;
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+	color: var(--fg-dim);
+}
+.c-sh-text textarea {
+	width: 100%; min-height: 1.8em; resize: none;
+	background: transparent; border-color: transparent;
+	padding: 1px 4px;
+}
+.c-sh-text textarea:hover { border-color: var(--border); }
+.c-sh-text textarea:focus {
+	background: var(--bg3); border-color: var(--accent);
+	min-height: 4.5em; resize: vertical;
+}
+
+/*-- ヘルプ ----------------------------------------------------------------*/
+
+.help-body { line-height: 1.6; }
+.help-body h3 {
+	margin: 10px 0 4px;
+	font-size: 12px;
+	border-bottom: 1px solid var(--border);
+	padding-bottom: 2px;
+}
+.help-body h3:first-child { margin-top: 0; }
+.help-body p, .help-body ul { margin: 4px 0; }
+.help-body ul { padding-left: 18px; }
+.help-body code {
+	font-family: Consolas, monospace;
+	background: var(--bg3);
+	padding: 0 4px;
+	border-radius: 3px;
+}
+
+/*-- 自己診断行 ------------------------------------------------------------*/
+
+#diagLine {
+	display: none;           /* Ctrl+D で .show を付けたときだけ出す */
+	position: fixed;
+	left: 0; right: 0; bottom: 0;
+	z-index: 1000;
+	padding: 2px 8px;
+	font-size: 10px;
+	font-family: Consolas, monospace;
+	color: #6a9955;
+	background: #1a1a1a;
+	border-top: 1px solid var(--border);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	user-select: text;
+}
+#diagLine.show { display: block; }
+#diagLine.err { color: #d9605c; }
+
+/*-- ステータス ------------------------------------------------------------*/
+
+.status { font-size: 11px; }
+.status.ok { color: var(--ok); }
+.status.error { color: var(--err); }
