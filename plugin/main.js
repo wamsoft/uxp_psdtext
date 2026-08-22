@@ -175,7 +175,8 @@ function findLayerById(layers, id) {
 	return null;
 }
 
-/// items: [{id, text}] をまとめて反映し、履歴は 1 段にまとめる。
+/// items: [{id, text?, name?}] をまとめて反映し、履歴は 1 段にまとめる。
+/// text はテキストレイヤの本文、name はレイヤ名 (種別問わず)。
 /// batchPlay で textKey を直接 set すると文字単位の書式が壊れることが
 /// あるので、DOM API (textItem.contents) を使う。
 async function applyTexts(items) {
@@ -195,8 +196,14 @@ async function applyTexts(items) {
 				for (const it of items) {
 					try {
 						const l = findLayerById(doc.layers, it.id);
-						if (!l || !l.textItem) throw new Error("text layer not found: " + it.id);
-						l.textItem.contents = String(it.text).replace(/\n/g, "\r");
+						if (!l) throw new Error("layer not found: " + it.id);
+						if (typeof it.name === "string" && it.name.trim() && it.name !== l.name) {
+							l.name = it.name;
+						}
+						if (typeof it.text === "string") {
+							if (!l.textItem) throw new Error("not a text layer: " + it.id);
+							l.textItem.contents = it.text.replace(/\n/g, "\r");
+						}
 						applied++;
 					} catch (e) {
 						errors.push({ id: it.id, message: String(e && e.message || e) });

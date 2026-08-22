@@ -335,14 +335,15 @@ function clickLayer(id, e) {
 // 単体編集 (ダブルクリック / F2)
 //---------------------------------------------------------------------------
 
-let editTarget = null;   ///< {id, orig} 編集中のレイヤ
+let editTarget = null;   ///< {id, orig, origName} 編集中のレイヤ
 
 function openEditDialog(id) {
 	const row = state.byId.get(id);
 	if (!row || !row.text) return;
-	editTarget = { id, orig: row.body || '' };
+	editTarget = { id, orig: row.body || '', origName: row.name };
 	$('#editTitle').textContent = row.name;
 	$('#editPath').textContent = row.path;
+	$('#editName').value = row.name;
 	$('#editText').value = editTarget.orig;
 	setStatus('#editStatus', '');
 	$('#editDialog').hidden = false;
@@ -354,27 +355,40 @@ function closeEditDialog() {
 	editTarget = null;
 }
 
-/// PS 側の更新が届いたら、未編集ならテキストを追従させる
+/// PS 側の更新が届いたら、未編集の欄だけ追従させる
 function refreshEditFromTree() {
 	if (!editTarget || $('#editDialog').hidden) return;
 	const fresh = state.byId.get(editTarget.id);
 	if (!fresh) return;
 	const ta = $('#editText');
-	const unedited = ta.value === editTarget.orig;
+	const ni = $('#editName');
+	const textUnedited = ta.value === editTarget.orig;
+	const nameUnedited = ni.value === editTarget.origName;
 	editTarget.orig = fresh.body || '';
-	if (unedited && document.activeElement !== ta) ta.value = editTarget.orig;
+	editTarget.origName = fresh.name;
+	if (textUnedited && document.activeElement !== ta) ta.value = editTarget.orig;
+	if (nameUnedited && document.activeElement !== ni) ni.value = editTarget.origName;
 	$('#editTitle').textContent = fresh.name;
 }
 
 async function applyEdit() {
 	if (!editTarget) return;
 	const text = $('#editText').value;
+	const name = $('#editName').value;
+	const item = { id: editTarget.id };
+	if (text !== editTarget.orig) item.text = text;
+	if (name.trim() && name !== editTarget.origName) item.name = name;
+	if (item.text === undefined && item.name === undefined) {
+		setStatus('#editStatus', tr('edit.done'), 'ok');   // 変更なし
+		return;
+	}
 	setStatus('#editStatus', tr('edit.working'));
 	$('#editApply').disabled = true;
 	try {
-		const res = await request('applyTexts', { items: [{ id: editTarget.id, text }] });
+		const res = await request('applyTexts', { items: [item] });
 		if ((res.errors || []).length) throw new Error(res.errors[0].message);
-		editTarget.orig = text;
+		if (item.text !== undefined) editTarget.orig = text;
+		if (item.name !== undefined) editTarget.origName = name;
 		setStatus('#editStatus', tr('edit.done'), 'ok');
 	} catch (e) {
 		setStatus('#editStatus', String(e.message || e), 'error');
@@ -448,11 +462,21 @@ async function copyToClipboard(text) {
 // 移植。変わった行だけ適用され、履歴 1 段にまとまる。
 //---------------------------------------------------------------------------
 
-let sheetRows = [];   ///< [{id, name, orig, val, el}] el は textarea
+let sheetRows = [];   ///< [{id, nameOrig, nameVal, orig, val, elName, elText}]
 
 function sheetTargets() {
 	const mode = $('#shTarget').value;
 	return state.rows.filter(r => r.text && (mode === 'text' || state.multi.has(r.id)));
+}
+
+/// 名前は空にできない (空欄は「変えない」扱い)
+function nameChanged(r) { return !!r.nameVal.trim() && r.nameVal !== r.nameOrig; }
+function textChanged(r) { return r.val !== r.orig; }
+function rowChanged(r)  { return nameChanged(r) || textChanged(r); }
+
+function markRow(r) {
+	const tr_ = r.elText && r.elText.closest('tr');
+	if (tr_) tr_.classList.toggle('hit', rowChanged(r));
 }
 
 function openSheetDialog() {
@@ -471,7 +495,10 @@ function closeSheetDialog() {
 
 function buildSheet() {
 	sheetRows = sheetTargets().map(r => ({
-		id: r.id, name: r.name, orig: r.body || '', val: r.body || '', el: null,
+		id: r.id,
+		nameOrig: r.name, nameVal: r.name,
+		orig: r.body || '', val: r.body || '',
+		elName: null, elText: null,
 	}));
 	renderSheet();
 }
@@ -492,10 +519,20 @@ function renderSheet() {
 	sheetRows.forEach((r, idx) => {
 		const line = document.createElement('tr');
 
-		const name = document.createElement('td');
-		name.className = 'c-sh-name';
-		name.textContent = r.name;
-		name.title = r.name;
+		const nameCell = document.createElement('td');
+		nameCell.className = 'c-sh-name';
+		const ni = document.createElement('input');
+		ni.type = 'text';
+		ni.value = r.nameVal;
+		ni.spellcheck = false;
+		ni.addEventListener('input', () => {
+			r.nameVal = ni.value;
+			markRow(r);
+			updateSheetCounts();
+		});
+		ni.addEventListener('paste', (e) => sheetPaste(e, idx, 'name'));
+		nameCell.appendChild(ni);
+		r.elName = ni;
 
 		const cell = document.createElement('td');
 		cell.className = 'c-sh-text';
@@ -505,15 +542,15 @@ function renderSheet() {
 		ta.spellcheck = false;
 		ta.addEventListener('input', () => {
 			r.val = ta.value;
-			line.classList.toggle('hit', r.val !== r.orig);
+			markRow(r);
 			updateSheetCounts();
 		});
-		ta.addEventListener('paste', (e) => sheetPaste(e, idx));
+		ta.addEventListener('paste', (e) => sheetPaste(e, idx, 'text'));
 		cell.appendChild(ta);
-		r.el = ta;
+		r.elText = ta;
 
-		if (r.val !== r.orig) line.classList.add('hit');
-		line.append(name, cell);
+		if (rowChanged(r)) line.classList.add('hit');
+		line.append(nameCell, cell);
 		table.appendChild(line);
 	});
 
@@ -521,15 +558,16 @@ function renderSheet() {
 }
 
 function updateSheetCounts() {
-	const n = sheetRows.filter(r => r.val !== r.orig).length;
+	const n = sheetRows.filter(rowChanged).length;
 	$('#shCount').textContent = tr('sheet.count', sheetRows.length, n);
 	$('#shApply').disabled = !n;
 	$('#shApply').textContent = n ? tr('sheet.applyN', n) : tr('sheet.apply');
 }
 
 /// セルへの貼り付け。複数行 (または複数列) の TSV なら、その行から下へ
-/// まとめて流し込む。複数列のときは各行の最後の列を本文として使う。
-function sheetPaste(e, startIdx) {
+/// まとめて流し込む。1 列なら貼り付けた列 (名前 or 本文) へ、
+/// 2 列以上なら先頭列を名前・最後の列を本文として使う。
+function sheetPaste(e, startIdx, col) {
 	const text = (e.clipboardData || window.clipboardData).getData('text');
 	if (!text) return;
 	const rows = parseTsv(text);
@@ -538,35 +576,46 @@ function sheetPaste(e, startIdx) {
 	rows.forEach((cols, i) => {
 		const r = sheetRows[startIdx + i];
 		if (!r) return;
-		r.val = cols[cols.length - 1];
-		if (r.el) {
-			r.el.value = r.val;
-			r.el.closest('tr').classList.toggle('hit', r.val !== r.orig);
+		if (cols.length >= 2) {
+			r.nameVal = cols[0];
+			r.val = cols[cols.length - 1];
+		} else if (col === 'name') {
+			r.nameVal = cols[0];
+		} else {
+			r.val = cols[0];
 		}
+		if (r.elName) r.elName.value = r.nameVal;
+		if (r.elText) r.elText.value = r.val;
+		markRow(r);
 	});
 	updateSheetCounts();
 }
 
 async function copySheet() {
-	const tsv = sheetRows.map(r => tsvField(r.name) + '\t' + tsvField(r.val)).join('\n');
+	const tsv = sheetRows.map(r => tsvField(r.nameVal) + '\t' + tsvField(r.val)).join('\n');
 	const ok = await copyToClipboard(tsv);
 	setStatus('#shStatus', ok ? tr('sheet.copied') : 'copy failed', ok ? 'ok' : 'error');
 }
 
 async function applySheet() {
-	const todo = sheetRows.filter(r => r.val !== r.orig);
+	const todo = sheetRows.filter(rowChanged);
 	if (!todo.length) return;
 	setStatus('#shStatus', tr('sheet.working'));
 	$('#shApply').disabled = true;
 	try {
 		const res = await request('applyTexts', {
-			items: todo.map(r => ({ id: r.id, text: r.val })),
+			items: todo.map(r => {
+				const item = { id: r.id };
+				if (textChanged(r)) item.text = r.val;
+				if (nameChanged(r)) item.name = r.nameVal;
+				return item;
+			}),
 		});
 		const failed = (res.errors || []).length;
 		const failedIds = new Set((res.errors || []).map(er => er.id));
 		for (const r of todo) {
-			if (!failedIds.has(r.id)) r.orig = r.val;
-			if (r.el) r.el.closest('tr').classList.toggle('hit', r.val !== r.orig);
+			if (!failedIds.has(r.id)) { r.orig = r.val; r.nameOrig = r.nameVal; }
+			markRow(r);
 		}
 		setStatus('#shStatus', failed ? tr('sheet.doneFailed', res.applied || 0, failed)
 		                              : tr('sheet.done', res.applied || 0),
@@ -577,20 +626,25 @@ async function applySheet() {
 	updateSheetCounts();
 }
 
-/// PS 側の更新が届いたら、未編集の行だけ追従させる (編集中の値は守る)
+/// PS 側の更新が届いたら、未編集の欄だけ追従させる (編集中の値は守る)
 function refreshSheetFromTree() {
 	if ($('#sheetDialog').hidden || !sheetRows.length) return;
 	for (const r of sheetRows) {
 		const fresh = state.byId.get(r.id);
 		if (!fresh) continue;
-		const unedited = r.val === r.orig;
+		const textUnedited = r.val === r.orig;
+		const nameUnedited = r.nameVal === r.nameOrig;
 		r.orig = fresh.body || '';
-		r.name = fresh.name;
-		if (unedited) {
+		r.nameOrig = fresh.name;
+		if (textUnedited) {
 			r.val = r.orig;
-			if (r.el && document.activeElement !== r.el) r.el.value = r.val;
+			if (r.elText && document.activeElement !== r.elText) r.elText.value = r.val;
 		}
-		if (r.el) r.el.closest('tr').classList.toggle('hit', r.val !== r.orig);
+		if (nameUnedited) {
+			r.nameVal = r.nameOrig;
+			if (r.elName && document.activeElement !== r.elName) r.elName.value = r.nameVal;
+		}
+		markRow(r);
 	}
 	updateSheetCounts();
 }

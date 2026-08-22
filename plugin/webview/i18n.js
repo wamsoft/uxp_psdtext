@@ -29,12 +29,13 @@ const DICT = {
 
 		'sel.count':       '{0} レイヤ選択中',
 
+		'edit.name':       '名前',
 		'edit.apply':      '適用',
 		'edit.done':       '反映しました',
 		'edit.working':    '処理中…',
 
 		'sheet.title':     'テキストをまとめて編集',
-		'sheet.hint':      '本文を書き換えて「適用」。変わった行だけが反映され、履歴 1 回で取り消せる。セルへの貼り付けは下方向に流し込まれる (Excel からの複数行貼り付け対応)。',
+		'sheet.hint':      'レイヤ名と本文を書き換えて「適用」。変わった行だけが反映され、履歴 1 回で取り消せる。セルへの貼り付けは下方向に流し込まれる (2 列以上を貼ると先頭列が名前・最後の列が本文になる)。名前を空にした行は名前を変えない。',
 		'sheet.target':    '対象',
 		'sheet.target.text': '全テキストレイヤ',
 		'sheet.target.sel':  '選択中のレイヤ',
@@ -75,12 +76,13 @@ const DICT = {
 
 		'sel.count':       '{0} layer(s) selected',
 
+		'edit.name':       'Name',
 		'edit.apply':      'Apply',
 		'edit.done':       'Applied',
 		'edit.working':    'Working…',
 
 		'sheet.title':     'Edit text layers',
-		'sheet.hint':      'Rewrite the contents and press Apply. Only the changed rows are sent, as one undo step. Pasting into a cell flows downwards (multi-row paste from Excel supported).',
+		'sheet.hint':      'Rewrite the layer names and contents, then press Apply. Only the changed rows are sent, as one undo step. Pasting into a cell flows downwards (with two or more columns, the first becomes the name and the last the contents). Rows with an emptied name keep their name.',
 		'sheet.target':    'Layers',
 		'sheet.target.text': 'Every text layer',
 		'sheet.target.sel':  'Selected',

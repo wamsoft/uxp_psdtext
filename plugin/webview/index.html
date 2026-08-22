@@ -51,6 +51,8 @@
 		</div>
 		<div class="modal-body">
 			<p id="editPath" class="hint"></p>
+			<label class="row"><span data-i18n="edit.name">Name</span>
+				<input type="text" id="editName" style="flex:1" spellcheck="false"></label>
 			<textarea id="editText" rows="8" spellcheck="false"></textarea>
 			<div class="row" style="margin-top:8px; align-items:center">
 				<button id="editApply" class="primary" data-i18n="edit.apply">Apply</button>
@@ -112,13 +114,14 @@
 					<li><b>テキスト全選択</b>: 表示中のテキストレイヤを全部選択</li>
 				</ul>
 				<h3>まとめて編集…</h3>
-				<p>対象 (全テキストレイヤ / 選択中) を表にして本文を編集する。
+				<p>対象 (全テキストレイヤ / 選択中) を表にして、<b>レイヤ名と本文</b>を編集する。
 				変わった行は色が付き、<b>適用</b>で変わった行だけが Photoshop に反映される。
-				適用は履歴 1 段なので <b>Ctrl+Z 1 回で全部戻る</b>。</p>
+				適用は履歴 1 段なので <b>Ctrl+Z 1 回で全部戻る</b>。名前を空にした行は名前を変えない。
+				規則ベースの一括リネーム (連番・検索置換) は姉妹ツールの PSD Power Rename へ。</p>
 				<p><b>TSV でコピー</b>で「レイヤ名 (タブ) 本文」をクリップボードへ書き出せる。
-				Excel やスプレッドシートで編集して、本文の列をコピーし、表の貼り付け開始行のセルに
-				貼り付けると<b>下方向にまとめて流し込まれる</b>
-				(複数列を貼った場合は各行の最後の列を本文として使う)。</p>
+				Excel やスプレッドシートで編集して、表の貼り付け開始行のセルに貼り付けると
+				<b>下方向にまとめて流し込まれる</b>。1 列だけ貼ると貼った列 (名前 or 本文) に、
+				<b>2 列以上を貼ると先頭列が名前・最後の列が本文</b>になる。</p>
 				<h3>その他</h3>
 				<ul>
 					<li>セル内の改行はそのままレイヤの改行になる</li>
@@ -139,13 +142,17 @@
 					<li><b>Select all text</b>: selects every listed text layer</li>
 				</ul>
 				<h3>Edit all…</h3>
-				<p>Puts the targets (every text layer, or the selection) in a table for editing.
+				<p>Puts the targets (every text layer, or the selection) in a table where both the
+				<b>layer names and the contents</b> can be edited.
 				Changed rows are highlighted; <b>Apply</b> sends only the changed rows to Photoshop
-				as a single history step, so <b>one Ctrl+Z undoes everything</b>.</p>
+				as a single history step, so <b>one Ctrl+Z undoes everything</b>.
+				Rows with an emptied name keep their name. For rule-based bulk renaming
+				(numbering, find &amp; replace) see the sister tool PSD Power Rename.</p>
 				<p><b>Copy as TSV</b> puts "layer name (tab) contents" on the clipboard.
-				Edit in Excel or a spreadsheet, copy the contents column, and paste into the cell
-				where the fill should start — the rows <b>flow downwards</b>
-				(when multiple columns are pasted, the last column of each row is used).</p>
+				Edit in Excel or a spreadsheet and paste back into the cell where the fill
+				should start — the rows <b>flow downwards</b>. A single pasted column goes into
+				the column you pasted into (name or contents); <b>with two or more columns the
+				first becomes the name and the last the contents</b>.</p>
 				<h3>Misc</h3>
 				<ul>
 					<li>Line breaks inside a cell become line breaks in the layer</li>

@@ -158,11 +158,14 @@ table.sheet th {
 }
 table.sheet tr.hit td { background: var(--hit); }
 
-.c-sh-name {
-	width: 30%; max-width: 200px;
-	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-	color: var(--fg-dim);
+.c-sh-name { width: 30%; max-width: 200px; }
+.c-sh-name input {
+	width: 100%;
+	background: transparent; border-color: transparent;
+	padding: 1px 4px;
 }
+.c-sh-name input:hover { border-color: var(--border); }
+.c-sh-name input:focus { background: var(--bg3); border-color: var(--accent); }
 .c-sh-text textarea {
 	width: 100%; min-height: 1.8em; resize: none;
 	background: transparent; border-color: transparent;
