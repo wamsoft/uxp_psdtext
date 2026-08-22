@@ -75,6 +75,7 @@
 				<button id="fmtB" class="mini" data-i18n-title="fmt.b.title"><b>B</b></button>
 				<button id="fmtI" class="mini" data-i18n-title="fmt.i.title"><i>I</i></button>
 				<button id="fmtU" class="mini" data-i18n-title="fmt.u.title"><u>U</u></button>
+				<button id="fmtS" class="mini" data-i18n-title="fmt.s.title"><s>S</s></button>
 				<span class="fmt-sep"></span>
 				<div class="font-combo fmt-font">
 					<input type="text" id="fmtFont" spellcheck="false"
@@ -211,7 +212,8 @@
 				基準が約 14px になるよう縮めてある (実サイズは pt の値のとおり)。</p>
 				<p>右上の<b>「タグ」ボタン</b>でタグ編集モードに切り替えられる
 				(一括置換など、テキストとして書式をいじりたいとき用)。</p>
-				<p>タグモードの文法: <code>[b]太字[/b]</code>
+				<p>タグモードの文法: <code>[b]太字[/b]</code> <code>[i]斜体[/i]</code>
+				<code>[u]下線[/u]</code> <code>[s]取り消し線[/s]</code>
 				<code>[size=96]大きく[/size]</code> <code>[color=#FF0000]赤[/color]</code>
 				<code>[font=...]</code> <code>[reset]</code>。閉じタグは「基準へ戻す」の意味。
 				文字としての <code>[</code> は <code>[[</code> と書く。</p>
@@ -262,10 +264,11 @@
 				14px (the real pt values are unchanged).</p>
 				<p>The <b>"Tags" button</b> switches to tag-editing mode, for when you want
 				to manipulate formatting as text (bulk replacements etc.).</p>
-				<p>Tag-mode syntax: <code>[b]bold[/b]</code> <code>[size=96]big[/size]</code>
-				<code>[color=#FF0000]red[/color]</code> <code>[font=...]</code>
-				<code>[reset]</code>. A closing tag means "back to the base style"; a literal
-				<code>[</code> is written <code>[[</code>.</p>
+				<p>Tag-mode syntax: <code>[b]bold[/b]</code> <code>[i]italic[/i]</code>
+				<code>[u]underline[/u]</code> <code>[s]strikethrough[/s]</code>
+				<code>[size=96]big[/size]</code> <code>[color=#FF0000]red[/color]</code>
+				<code>[font=...]</code> <code>[reset]</code>. A closing tag means "back to the
+				base style"; a literal <code>[</code> is written <code>[[</code>.</p>
 				<h3>Misc</h3>
 				<ul>
 					<li>Font fields list only <b>favorites + fonts used in this document</b>;

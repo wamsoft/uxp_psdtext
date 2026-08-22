@@ -15,16 +15,18 @@
 // ここは DOM に触れない純粋な文字列操作だけ。UI は app.js。
 //---------------------------------------------------------------------------
 
-/// タグとして解釈する名前 (これ以外は本文の文字として扱う = C++ 側と同じ)
+/// タグとして解釈する名前 (これ以外は本文の文字として扱う)。
+/// psdtext の文法 + 取り消し線 [s] (uxp_psdtext 拡張)
 const KNOWN = new Set(['b', 'bold', 'i', 'italic', 'u', 'underline',
+                       's', 'strike', 'strikethrough',
                        'size', 'font', 'color', 'reset', 'align']);
 
 /// 書式の属性 (align は段落の指定なので別扱い)
-export const STYLE_ATTRS = ['font', 'size', 'color', 'bold', 'italic', 'underline'];
+export const STYLE_ATTRS = ['font', 'size', 'color', 'bold', 'italic', 'underline', 'strike'];
 /// 値を持つ属性 (「基準へ戻す」= null を表せる)
 export const VALUE_ATTRS = ['font', 'size', 'color'];
 /// on/off だけの属性
-export const FLAG_ATTRS = ['bold', 'italic', 'underline'];
+export const FLAG_ATTRS = ['bold', 'italic', 'underline', 'strike'];
 
 export const ALIGN_NAMES = ['left', 'right', 'center', 'justify-left',
                             'justify-right', 'justify-center', 'justify-all'];
@@ -34,6 +36,7 @@ function attrOf(name) {
 		case 'b': case 'bold':      return 'bold';
 		case 'i': case 'italic':    return 'italic';
 		case 'u': case 'underline': return 'underline';
+		case 's': case 'strike': case 'strikethrough': return 'strike';
 		default:                    return name;
 	}
 }
@@ -184,6 +187,7 @@ export function baseStyle(base) {
 		bold:      !!base.bold,
 		italic:    !!base.italic,
 		underline: !!base.underline,
+		strike:    !!base.strike,
 	};
 }
 
@@ -230,7 +234,7 @@ export function formatMark(specs) {
 	if ('size' in specs)  o += specs.size === null ? '[/size]' : `[size=${sizeText(specs.size)}]`;
 	if ('color' in specs) o += specs.color === null ? '[/color]' : `[color=${specs.color}]`;
 	for (const [a, on, off] of [['bold', '[b]', '[/b]'], ['italic', '[i]', '[/i]'],
-	                            ['underline', '[u]', '[/u]']])
+	                            ['underline', '[u]', '[/u]'], ['strike', '[s]', '[/s]']])
 		if (a in specs) o += specs[a] ? on : off;
 	return o;
 }
@@ -427,7 +431,8 @@ export function describeMark(specs, tr) {
 	if ('color' in specs)
 		parts.push(specs.color === null ? { text: tr('fmt.chip.colorBase') }
 		                                : { text: '', color: normColor(specs.color) });
-	for (const [a, on, off] of [['bold', 'B', 'B'], ['italic', 'I', 'I'], ['underline', 'U', 'U']])
+	for (const [a, on, off] of [['bold', 'B', 'B'], ['italic', 'I', 'I'],
+	                            ['underline', 'U', 'U'], ['strike', 'S', 'S']])
 		if (a in specs) parts.push({ text: (specs[a] ? on : off), strike: !specs[a] });
 	return parts;
 }

@@ -412,7 +412,7 @@ function modelJson(model) {
 	const m = mergeRanges(model);
 	return JSON.stringify([
 		m.text,
-		m.ranges.map(r => [r.from, r.to, r.font, r.size, r.color, r.bold, r.italic, r.underline]),
+		m.ranges.map(r => [r.from, r.to, r.font, r.size, r.color, r.bold, r.italic, r.underline, r.strike]),
 		(m.paragraphs || []).map(p => [p.from, p.to, p.align || 'left']),
 	]);
 }
@@ -453,7 +453,7 @@ function initQuill() {
 
 	quill = new Quill('#editRich', {
 		modules: { toolbar: false, history: { userOnly: true } },
-		formats: ['bold', 'italic', 'underline', 'color', 'psize', 'psfont', 'align'],
+		formats: ['bold', 'italic', 'underline', 'strike', 'color', 'psize', 'psfont', 'align'],
 	});
 	quill.on('editor-change', () => {
 		if (fmtSyncTimer) clearTimeout(fmtSyncTimer);
@@ -477,6 +477,7 @@ function modelToEditor(model) {
 		if (st.bold) attrs.bold = true;
 		if (st.italic) attrs.italic = true;
 		if (st.underline) attrs.underline = true;
+		if (st.strike) attrs.strike = true;
 		if (st.color) attrs.color = st.color;
 		if (st.size > 0) attrs.psize = String(st.size);
 		if (st.font) attrs.psfont = st.font;
@@ -513,6 +514,7 @@ function editorToModel() {
 			size: sz > 0 ? sz : b.size,
 			color: (typeof at.color === 'string' && at.color) ? at.color : b.color,
 			bold: !!at.bold, italic: !!at.italic, underline: !!at.underline,
+			strike: !!at.strike,
 		};
 		const from = text.length;
 		text += piece;
@@ -597,7 +599,7 @@ function setTagMode(on) {
 	}
 	tagMode = on;
 	$('#fmtMode').textContent = tr(on ? 'fmt.mode.wysiwyg' : 'fmt.mode.tag');
-	for (const id of ['#fmtB', '#fmtI', '#fmtU', '#fmtSize', '#fmtSizeApply',
+	for (const id of ['#fmtB', '#fmtI', '#fmtU', '#fmtS', '#fmtSize', '#fmtSizeApply',
 	                  '#fmtColor', '#fmtColorApply', '#fmtAlL', '#fmtAlC',
 	                  '#fmtAlR', '#fmtAlJ', '#fmtReset'])
 		$(id).disabled = on;
@@ -634,6 +636,7 @@ function syncFmtBar() {
 	$('#fmtB').classList.toggle('on', f.bold === true);
 	$('#fmtI').classList.toggle('on', f.italic === true);
 	$('#fmtU').classList.toggle('on', f.underline === true);
+	$('#fmtS').classList.toggle('on', f.strike === true);
 	const al = typeof f.align === 'string' ? f.align : 'left';
 	$('#fmtAlL').classList.toggle('on', al === 'left');
 	$('#fmtAlC').classList.toggle('on', al === 'center');
@@ -655,6 +658,7 @@ function resetSelToBase() {
 	quill.format('bold', b.bold || false);
 	quill.format('italic', b.italic || false);
 	quill.format('underline', b.underline || false);
+	quill.format('strike', b.strike || false);
 	quill.format('color', b.color || false);
 	quill.format('psize', b.size > 0 ? String(b.size) : false);
 	quill.format('psfont', b.font || false);
@@ -797,6 +801,7 @@ async function applyEdit() {
 				ranges: ranges.map(r => ({
 					from: r.from, to: r.to, font: r.font, size: r.size,
 					color: r.color, bold: r.bold, italic: r.italic, underline: r.underline,
+					strike: r.strike,
 				})),
 				paragraphs: (model.paragraphs || []).map(p => ({
 					from: p.from, to: p.to, align: p.align || 'left',
@@ -1665,6 +1670,7 @@ function wire() {
 	$('#fmtB').addEventListener('click', () => fmtFormat('bold', !(quill.getFormat().bold)));
 	$('#fmtI').addEventListener('click', () => fmtFormat('italic', !(quill.getFormat().italic)));
 	$('#fmtU').addEventListener('click', () => fmtFormat('underline', !(quill.getFormat().underline)));
+	$('#fmtS').addEventListener('click', () => fmtFormat('strike', !(quill.getFormat().strike)));
 	$('#fmtSizeApply').addEventListener('click', () => {
 		const v = parseFloat($('#fmtSize').value);
 		if (v > 0) fmtFormat('psize', String(v));

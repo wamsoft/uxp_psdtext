@@ -342,6 +342,7 @@ function colorToHex(c) {
 function simpleStyle(ts) {
 	ts = ts || {};
 	const u = ts.underline && ts.underline._value;
+	const s = ts.strikethrough && ts.strikethrough._value;
 	return {
 		font: ts.fontPostScriptName || "",
 		size: Number(unitVal(ts.size)) || 0,
@@ -349,6 +350,7 @@ function simpleStyle(ts) {
 		bold: !!ts.syntheticBold,
 		italic: !!ts.syntheticItalic,
 		underline: !!(u && u !== "underlineOff"),
+		strike: !!(s && s !== "strikethroughOff"),
 	};
 }
 
@@ -423,6 +425,10 @@ function buildTextStyle(template, st, vertical) {
 			? (vertical ? "underlineOnRightInVertical" : "underlineOnLeftInVertical")
 			: "underlineOff",
 	};
+	ts.strikethrough = {
+		_enum: "strikethrough",
+		_value: st.strike ? "xHeightStrikethroughOn" : "strikethroughOff",
+	};
 	return ts;
 }
 
@@ -443,39 +449,56 @@ function clampParagraphRanges(prs, len) {
 async function applyRichTo(id, rich) {
 	const tk = await getTextKeyDesc(id);
 	if (!tk) throw new Error("no textKey: " + id);
-	const template = (tk.textStyleRange && tk.textStyleRange[0] &&
-	                  tk.textStyleRange[0].textStyle) || {};
+	const srcRanges = (tk.textStyleRange || []).slice().sort((a, b) => a.from - b.from);
+	const template0 = (srcRanges[0] && srcRanges[0].textStyle) || {};
 	const vertical = !!(tk.orientation && tk.orientation._value === "vertical");
 	const psText = String(rich.text || "").replace(/\n/g, "\r");
 	const len = psText.length;
+
+	// 本文が変わっていなければ位置がそのまま対応するので、範囲ごとに
+	// 「元のラン」をテンプレートに使う。tracking や縦中横の回転など、
+	// こちらで扱わない属性をラン単位で保つため (先頭ランで塗り潰すと、
+	// 和欧混在の縦書きで下線位置や字面がずれる)。
+	const sameText = String(tk.textKey || "") === psText;
+	const templateAt = (pos) => {
+		if (!sameText) return template0;
+		const hit = srcRanges.find(x => x.from <= pos && pos < x.to);
+		return (hit && hit.textStyle) || template0;
+	};
 
 	let ranges = (rich.ranges || [])
 		.map(r => ({
 			_obj: "textStyleRange",
 			from: Math.max(0, Math.min(r.from, len)),
 			to: Math.min(r.to, len),
-			textStyle: buildTextStyle(template, r, vertical),
+			textStyle: buildTextStyle(templateAt(r.from), r, vertical),
 		}))
 		.filter(r => r.to > r.from);
 	if (!ranges.length) {
 		ranges = [{ _obj: "textStyleRange", from: 0, to: len,
-		            textStyle: buildTextStyle(template, simpleStyle(template), vertical) }];
+		            textStyle: buildTextStyle(template0, simpleStyle(template0), vertical) }];
 	}
 	ranges[ranges.length - 1].to = len;   // 端数を出さない
 
 	const to = { _obj: "textLayer", textKey: psText, textStyleRange: ranges };
 
 	// 段落範囲。webview から揃え付きで来ればそれを使い、無ければ元のものを
-	// 新しい本文長に合わせて詰めるだけにする
+	// 新しい本文長に合わせて詰めるだけにする。テンプレートは文字範囲と同じく
+	// 位置対応する元の段落から取る
 	if (rich.paragraphs && rich.paragraphs.length) {
-		const ptemplate = (tk.paragraphStyleRange && tk.paragraphStyleRange[0] &&
-		                   tk.paragraphStyleRange[0].paragraphStyle) || {};
+		const srcParas = (tk.paragraphStyleRange || []).slice().sort((a, b) => a.from - b.from);
+		const ptemplate0 = (srcParas[0] && srcParas[0].paragraphStyle) || {};
+		const ptemplateAt = (pos) => {
+			if (!sameText) return ptemplate0;
+			const hit = srcParas.find(x => x.from <= pos && pos < x.to);
+			return (hit && hit.paragraphStyle) || ptemplate0;
+		};
 		const prs = rich.paragraphs
 			.map(p => ({
 				_obj: "paragraphStyleRange",
 				from: Math.max(0, Math.min(p.from, len)),
 				to: Math.min(p.to, len),
-				paragraphStyle: { ...JSON.parse(JSON.stringify(ptemplate)),
+				paragraphStyle: { ...JSON.parse(JSON.stringify(ptemplateAt(p.from))),
 				                  _obj: "paragraphStyle", align: alignEnum(p.align) },
 			}))
 			.filter(p => p.to > p.from);
