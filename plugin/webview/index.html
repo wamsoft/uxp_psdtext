@@ -78,6 +78,22 @@
 						</select></label>
 				</div>
 			</div>
+			<div class="row fmt-bar">
+				<button id="fmtB" class="mini" data-i18n-title="fmt.b.title"><b>B</b></button>
+				<button id="fmtI" class="mini" data-i18n-title="fmt.i.title"><i>I</i></button>
+				<button id="fmtU" class="mini" data-i18n-title="fmt.u.title"><u>U</u></button>
+				<span class="fmt-sep"></span>
+				<input type="number" id="fmtSize" class="num" min="0.1" step="0.5"
+					data-i18n-title="fmt.size.title">
+				<button id="fmtSizeApply" class="mini" data-i18n="fmt.apply">Set</button>
+				<span class="fmt-sep"></span>
+				<input type="color" id="fmtColor" value="#ff0000" data-i18n-title="fmt.color.title">
+				<button id="fmtColorApply" class="mini" data-i18n="fmt.apply">Set</button>
+				<span class="fmt-sep"></span>
+				<button id="fmtReset" class="mini" data-i18n="fmt.reset"
+					data-i18n-title="fmt.reset.title">Reset</button>
+				<span class="hint" data-i18n="fmt.hint"></span>
+			</div>
 			<textarea id="editText" rows="8" spellcheck="false"></textarea>
 			<div class="row" style="margin-top:8px; align-items:center">
 				<button id="editApply" class="primary" data-i18n="edit.apply">Apply</button>
@@ -218,6 +234,16 @@
 				Excel やスプレッドシートで編集して、表の貼り付け開始行のセルに貼り付けると
 				<b>下方向にまとめて流し込まれる</b>。1 列だけ貼ると貼った列 (名前 or 本文) に、
 				<b>2 列以上を貼ると先頭列が名前・最後の列が本文</b>になる。</p>
+				<h3>部分書式 (タグ)</h3>
+				<p>本文の途中の書式は<b>タグ付きテキスト</b>で表す (psdtext と同じ文法)。
+				<code>[b]太字[/b]</code> <code>[size=96]大きく[/size]</code>
+				<code>[color=#FF0000]赤[/color]</code> <code>[font=...]</code> <code>[reset]</code>。
+				閉じタグは「その属性を基準へ戻す」の意味。文字としての <code>[</code> は
+				<code>[[</code> と書く。</p>
+				<p>単体編集では、<b>本文で範囲を選択して B / I / U / サイズ / 色ボタン</b>を押すと
+				タグが自動で入る。「基準へ」で選択範囲の書式を消せる。
+				まとめて編集の表や TSV にもタグ付きの本文がそのまま乗るので、
+				タグごとコピー・編集できる。</p>
 				<h3>書式…</h3>
 				<p>対象テキストレイヤの<b>初期書式</b> (フォント / サイズ / 色 / 揃え) をまとめて変える。
 				チェックした項目だけが適用され、本文の途中の部分書式には触らない。
@@ -255,6 +281,16 @@
 				should start — the rows <b>flow downwards</b>. A single pasted column goes into
 				the column you pasted into (name or contents); <b>with two or more columns the
 				first becomes the name and the last the contents</b>.</p>
+				<h3>Per-range formatting (tags)</h3>
+				<p>Formatting inside the body is written as <b>tagged text</b> (same syntax as
+				psdtext): <code>[b]bold[/b]</code> <code>[size=96]big[/size]</code>
+				<code>[color=#FF0000]red[/color]</code> <code>[font=...]</code> <code>[reset]</code>.
+				A closing tag means "back to the base style". A literal <code>[</code> is
+				written <code>[[</code>.</p>
+				<p>In the single-layer editor, <b>select part of the body and press the
+				B / I / U / size / color buttons</b> to insert tags automatically; "To base"
+				clears the selection's formatting. The bulk-edit table and the TSV carry the
+				tagged body as-is, so tags survive copy &amp; paste round-trips.</p>
 				<h3>Style…</h3>
 				<p>Changes the <b>base style</b> (font / size / color / alignment) of the target
 				text layers in bulk. Only the checked fields are applied; formatting on parts of

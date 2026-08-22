@@ -91,6 +91,18 @@ async function handleMessage(msg) {
 	case "getStyle":
 		send({ type: "style", reqId: msg.reqId, ...readStyle(msg.id) });
 		break;
+	case "getRich":
+		send({ type: "rich", reqId: msg.reqId, ...(await readRich(msg.id)) });
+		break;
+	case "getRichMany": {
+		const map = {};
+		for (const id of msg.ids || []) map[id] = await readRich(id);
+		send({ type: "richMany", reqId: msg.reqId, map });
+		break;
+	}
+	case "rawTextKey":   // 開発用: 記述子を生で見る
+		send({ type: "raw", reqId: msg.reqId, raw: await rawTextKey(msg.id) });
+		break;
 	case "getUsedFonts":
 		send({ type: "usedFonts", reqId: msg.reqId, fonts: usedFontsList() });
 		break;
@@ -204,11 +216,11 @@ function applyStyleTo(l, style) {
 	}
 }
 
-/// items: [{id, text?, name?, style?}] をまとめて反映し、履歴は 1 段にまとめる。
-/// text はテキストレイヤの本文、name はレイヤ名 (種別問わず)、
-/// style はレイヤ全体の初期書式 {font?, size?, color?, align?}。
-/// batchPlay で textKey を直接 set すると文字単位の書式が壊れることが
-/// あるので、DOM API (textItem.contents) を使う。
+/// items: [{id, text?, rich?, name?, style?}] をまとめて反映し、履歴は 1 段。
+/// text はプレーン本文 (textItem.contents 経由 = 全体書式は保たれるが部分
+/// 書式は落ちる)、rich は {text, ranges} で部分書式ごと書き戻す。
+/// rich があるときの style は align だけ意味を持つ (文字属性は範囲に
+/// 焼き込まれて届く。characterStyle で重ねると範囲書式を潰すため)。
 async function applyTexts(items) {
 	const doc = app.activeDocument;
 	if (!doc) return { applied: 0, errors: [{ message: "no document" }] };
@@ -230,12 +242,19 @@ async function applyTexts(items) {
 						if (typeof it.name === "string" && it.name.trim() && it.name !== l.name) {
 							l.name = it.name;
 						}
-						if (typeof it.text === "string") {
+						if (it.rich && typeof it.rich === "object") {
+							await applyRichTo(it.id, it.rich);
+						} else if (typeof it.text === "string") {
 							if (!l.textItem) throw new Error("not a text layer: " + it.id);
 							l.textItem.contents = it.text.replace(/\n/g, "\r");
 						}
 						if (it.style && typeof it.style === "object") {
-							applyStyleTo(l, it.style);
+							if (it.rich) {
+								// 文字属性は範囲側で処理済み。段落の揃えだけ通す
+								if (it.style.align) applyStyleTo(l, { align: it.style.align });
+							} else {
+								applyStyleTo(l, it.style);
+							}
 						}
 						applied++;
 					} catch (e) {
@@ -250,6 +269,153 @@ async function applyTexts(items) {
 		applying = false;
 	}
 	return { applied, errors };
+}
+
+//---------------------------------------------------------------------------
+// 部分書式 (textStyleRange の読み書き)
+//
+// レイヤの text 記述子を batchPlay で get/set する。webview 側はタグ付き
+// テキストとして扱い、ここでは「プレーン本文 + 範囲ごとの簡易スタイル」の
+// 形で受け渡す。行送りやトラッキング等のここで扱わない属性は、先頭ランの
+// textStyle をテンプレートに全範囲へ引き継ぐ (psdtext と同じ流儀)。
+//---------------------------------------------------------------------------
+
+async function getTextKeyDesc(id) {
+	const [res] = await action.batchPlay([{
+		_obj: "get",
+		_target: [
+			{ _ref: "property", _property: "textKey" },
+			{ _ref: "layer", _id: id },
+		],
+	}], {});
+	return res && res.textKey;
+}
+
+async function rawTextKey(id) {
+	try { return await getTextKeyDesc(id); }
+	catch (e) { return { error: String(e && e.message || e) }; }
+}
+
+function unitVal(v) {
+	return (v && typeof v === "object" && "_value" in v) ? v._value : v;
+}
+
+/// 記述子の RGBColor。緑は "grain" というキーで来る (Photoshop の古い癖)
+function colorToHex(c) {
+	if (!c) return "#000000";
+	const g = c.grain !== undefined ? c.grain : c.green;
+	return "#" + toHex2(c.red || 0) + toHex2(g || 0) + toHex2(c.blue || 0);
+}
+
+function simpleStyle(ts) {
+	ts = ts || {};
+	const u = ts.underline && ts.underline._value;
+	return {
+		font: ts.fontPostScriptName || "",
+		size: Number(unitVal(ts.size)) || 0,
+		color: colorToHex(ts.color),
+		bold: !!ts.syntheticBold,
+		italic: !!ts.syntheticItalic,
+		underline: !!(u && u !== "underlineOff"),
+	};
+}
+
+/// {text, ranges:[{from,to,font,size,color,bold,italic,underline}]} を返す
+async function readRich(id) {
+	try {
+		const tk = await getTextKeyDesc(id);
+		if (!tk) return { message: "no textKey: " + id };
+		const text = String(tk.textKey || "").replace(/\r/g, "\n");
+		const ranges = (tk.textStyleRange || [])
+			.slice().sort((a, b) => a.from - b.from)
+			.map(r => ({ from: Math.max(0, r.from), to: Math.min(r.to, text.length),
+			             ...simpleStyle(r.textStyle) }))
+			.filter(r => r.to > r.from);
+		return { text, ranges };
+	} catch (e) {
+		return { message: String(e && e.message || e) };
+	}
+}
+
+/// テンプレート (先頭ランの textStyle) に簡易スタイルを重ねる
+function buildTextStyle(template, st) {
+	const ts = JSON.parse(JSON.stringify(template || {}));
+	ts._obj = "textStyle";
+	if (st.font) {
+		ts.fontPostScriptName = st.font;
+		delete ts.fontName;        // PS 名と食い違うと古い方が勝つことがある
+		delete ts.fontStyleName;
+	}
+	if (st.size > 0) {
+		if (ts.size && typeof ts.size === "object" && "_value" in ts.size) {
+			ts.size = { ...ts.size, _value: st.size };
+		} else {
+			ts.size = { _unit: "pointsUnit", _value: st.size };
+		}
+		delete ts.impliedFontSize; // 再計算させる
+	}
+	if (/^#[0-9a-fA-F]{6}$/.test(st.color || "")) {
+		ts.color = {
+			_obj: "RGBColor",
+			red: parseInt(st.color.slice(1, 3), 16),
+			grain: parseInt(st.color.slice(3, 5), 16),
+			blue: parseInt(st.color.slice(5, 7), 16),
+		};
+	}
+	ts.syntheticBold = !!st.bold;
+	ts.syntheticItalic = !!st.italic;
+	ts.underline = {
+		_enum: "underline",
+		_value: st.underline ? "underlineOnLeftInVertical" : "underlineOff",
+	};
+	return ts;
+}
+
+/// 段落範囲を新しい本文長に合わせて詰める (揃えの情報を保存するため)
+function clampParagraphRanges(prs, len) {
+	const out = [];
+	for (const r of prs || []) {
+		const c = JSON.parse(JSON.stringify(r));
+		c.from = Math.max(0, Math.min(c.from, len));
+		c.to = Math.min(c.to, len);
+		if (c.to > c.from) out.push(c);
+	}
+	if (out.length) out[out.length - 1].to = len;
+	return out;
+}
+
+/// rich = {text (\n区切り), ranges} をレイヤへ書き戻す (モーダル内から呼ぶ)
+async function applyRichTo(id, rich) {
+	const tk = await getTextKeyDesc(id);
+	if (!tk) throw new Error("no textKey: " + id);
+	const template = (tk.textStyleRange && tk.textStyleRange[0] &&
+	                  tk.textStyleRange[0].textStyle) || {};
+	const psText = String(rich.text || "").replace(/\n/g, "\r");
+	const len = psText.length;
+
+	let ranges = (rich.ranges || [])
+		.map(r => ({
+			_obj: "textStyleRange",
+			from: Math.max(0, Math.min(r.from, len)),
+			to: Math.min(r.to, len),
+			textStyle: buildTextStyle(template, r),
+		}))
+		.filter(r => r.to > r.from);
+	if (!ranges.length) {
+		ranges = [{ _obj: "textStyleRange", from: 0, to: len,
+		            textStyle: buildTextStyle(template, simpleStyle(template)) }];
+	}
+	ranges[ranges.length - 1].to = len;   // 端数を出さない
+
+	const to = { _obj: "textLayer", textKey: psText, textStyleRange: ranges };
+	const prs = clampParagraphRanges(tk.paragraphStyleRange, len);
+	if (prs.length) to.paragraphStyleRange = prs;
+
+	await action.batchPlay([{
+		_obj: "set",
+		_target: [{ _ref: "textLayer", _id: id }],
+		to,
+	}], {});
 }
 
 //---------------------------------------------------------------------------

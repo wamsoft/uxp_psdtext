@@ -9,6 +9,8 @@
 
 import { dlog } from './debug.js';
 import { tr, applyI18n, toggleLang, currentLang } from './i18n.js';
+import { baseStyle, styleAt, editRange, shiftPos } from './tags.js';
+import { rangesToTagged, taggedToRich } from './rich.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -342,18 +344,21 @@ function clickLayer(id, e) {
 // 単体編集 (ダブルクリック / F2)
 //---------------------------------------------------------------------------
 
-let editTarget = null;   ///< {id, orig, origName, origStyle} 編集中のレイヤ
+let editTarget = null;   ///< {id, orig, origName, origStyle, richBase, useRich, loaded}
 const editTouched = { font: false, size: false, color: false, align: false };
 
 function openEditDialog(id) {
 	const row = state.byId.get(id);
 	if (!row || !row.text) return;
-	editTarget = { id, orig: row.body || '', origName: row.name, origStyle: {} };
+	editTarget = {
+		id, orig: row.body || '', origName: row.name, origStyle: {},
+		richBase: null, useRich: false, loaded: false,
+	};
 	for (const k of Object.keys(editTouched)) editTouched[k] = false;
 	$('#editTitle').textContent = row.name;
 	$('#editPath').textContent = row.path;
 	$('#editName').value = row.name;
-	$('#editText').value = editTarget.orig;
+	$('#editText').value = editTarget.orig;   // 仮 (プレーン)。rich が来たら差し替え
 	$('#editFont').value = '';
 	$('#editFont').dataset.ps = '';
 	$('#editSize').value = '';
@@ -364,22 +369,101 @@ function openEditDialog(id) {
 	$('#editText').focus();
 	ensureFonts();
 	refreshUsedFonts();
-	loadEditStyle(id);
+	loadEditRich(id);
 }
 
-/// いまの初期書式を読んで欄に反映する (開いた直後は空のまま編集できる)
-async function loadEditStyle(id) {
+/// 部分書式ごとの本文 (タグ付き) と基準書式を読んで欄に反映する。
+/// rich が読めないレイヤはプレーン編集のまま動く。
+async function loadEditRich(id) {
 	try {
-		const res = await request('getStyle', { id });
+		const [richRes, styleRes] = await Promise.all([
+			request('getRich', { id }),
+			request('getStyle', { id }),
+		]);
 		await ensureFonts();   // PS 名 → ファミリ名表示のため
 		if (!editTarget || editTarget.id !== id) return;   // もう別のレイヤを開いた
-		const st = res.style || {};
-		editTarget.origStyle = st;
-		if (!editTouched.font && st.font) setFontValue($('#editFont'), st.font);
-		if (!editTouched.size && typeof st.size === 'number') $('#editSize').value = st.size;
-		if (!editTouched.color && st.color) $('#editColor').value = st.color;
-		if (!editTouched.align && st.align) $('#editAlign').value = st.align;
-	} catch (e) { /* 書式欄が空のままなだけ */ }
+		const st = styleRes.style || {};
+
+		if (!richRes.message) {
+			editTarget.useRich = true;
+			editTarget.richBase = baseStyle((richRes.ranges || [])[0] || {});
+			const tagged = rangesToTagged(richRes.text || '', richRes.ranges || []);
+			const untouchedBody = $('#editText').value ===
+				((state.byId.get(id) || {}).body || '');
+			editTarget.orig = tagged;
+			if (untouchedBody) $('#editText').value = tagged;
+			const b = editTarget.richBase;
+			editTarget.origStyle = { font: b.font, size: b.size, color: b.color, align: st.align };
+		} else {
+			editTarget.orig = $('#editText').value;
+			editTarget.origStyle = st;
+		}
+
+		const os = editTarget.origStyle;
+		if (!editTouched.font && os.font) setFontValue($('#editFont'), os.font);
+		if (!editTouched.size && typeof os.size === 'number' && os.size > 0)
+			$('#editSize').value = os.size;
+		if (!editTouched.color && os.color) $('#editColor').value = os.color;
+		if (!editTouched.align && os.align) $('#editAlign').value = os.align;
+		editTarget.loaded = true;
+	} catch (e) { /* プレーン編集のまま */ }
+}
+
+//--- 選択範囲への書式付け (タグ挿入。ロジックは tags.js の editRange) ------
+
+/// いまの基準書式 (基準欄でユーザーが触った値を反映したもの)
+function editSelBase() {
+	const b = { ...(editTarget && editTarget.richBase || baseStyle({})) };
+	if (editTouched.font) {
+		const f = resolveFontPs($('#editFont'));
+		if (f) b.font = f;
+	}
+	if (editTouched.size) {
+		const v = parseFloat($('#editSize').value);
+		if (v > 0) b.size = v;
+	}
+	if (editTouched.color) b.color = $('#editColor').value;
+	return b;
+}
+
+function applyRangeTag(changes) {
+	if (!editTarget) return;
+	if (!editTarget.useRich) {
+		setStatus('#editStatus', tr('fmt.noRich'), 'error');
+		return;
+	}
+	const ta = $('#editText');
+	const s = ta.selectionStart, e = ta.selectionEnd;
+	if (s >= e) {
+		setStatus('#editStatus', tr('fmt.needSel'), 'error');
+		ta.focus();
+		return;
+	}
+	const res = editRange(ta.value, s, e, changes, editSelBase());
+	const ns = shiftPos(s, res.edits), ne = shiftPos(e, res.edits);
+	ta.value = res.text;
+	ta.focus();
+	ta.setSelectionRange(ns, ne);
+	setStatus('#editStatus', '');
+}
+
+function toggleFlagTag(attr) {
+	if (!editTarget || !editTarget.useRich) {
+		setStatus('#editStatus', tr('fmt.noRich'), 'error');
+		return;
+	}
+	const ta = $('#editText');
+	const cur = styleAt(ta.value, ta.selectionStart, editSelBase());
+	applyRangeTag({ [attr]: !cur[attr] });
+}
+
+/// 選択範囲の書式を基準へ戻す
+function resetRangeTag() {
+	const b = editSelBase();
+	applyRangeTag({
+		font: null, size: null, color: null,
+		bold: b.bold, italic: b.italic, underline: b.underline,
+	});
 }
 
 function closeEditDialog() {
@@ -387,18 +471,21 @@ function closeEditDialog() {
 	editTarget = null;
 }
 
-/// PS 側の更新が届いたら、未編集の欄だけ追従させる
+/// PS 側の更新が届いたら、未編集の欄だけ追従させる。
+/// rich モードの本文はツリーのプレーン本文では同期できないので触らない。
 function refreshEditFromTree() {
 	if (!editTarget || $('#editDialog').hidden) return;
 	const fresh = state.byId.get(editTarget.id);
 	if (!fresh) return;
 	const ta = $('#editText');
 	const ni = $('#editName');
-	const textUnedited = ta.value === editTarget.orig;
+	if (!editTarget.useRich) {
+		const textUnedited = ta.value === editTarget.orig;
+		editTarget.orig = fresh.body || '';
+		if (textUnedited && document.activeElement !== ta) ta.value = editTarget.orig;
+	}
 	const nameUnedited = ni.value === editTarget.origName;
-	editTarget.orig = fresh.body || '';
 	editTarget.origName = fresh.name;
-	if (textUnedited && document.activeElement !== ta) ta.value = editTarget.orig;
 	if (nameUnedited && document.activeElement !== ni) ni.value = editTarget.origName;
 	$('#editTitle').textContent = fresh.name;
 }
@@ -423,11 +510,22 @@ async function applyEdit() {
 	const text = $('#editText').value;
 	const name = $('#editName').value;
 	const item = { id: editTarget.id };
-	if (text !== editTarget.orig) item.text = text;
+	const style = editStyleDiff();   // 触った欄のうち変わったものだけ
+
+	if (editTarget.useRich) {
+		// 本文か文字属性が変わったら、タグを基準で解決して範囲ごと書き戻す
+		const charChanged = style && (style.font || style.size || style.color);
+		if (text !== editTarget.orig || charChanged) {
+			item.rich = taggedToRich(text, editSelBase());
+		}
+		if (style && style.align) item.style = { align: style.align };
+	} else {
+		if (text !== editTarget.orig) item.text = text;
+		if (style) item.style = style;
+	}
 	if (name.trim() && name !== editTarget.origName) item.name = name;
-	const style = editStyleDiff();
-	if (style) item.style = style;
-	if (item.text === undefined && item.name === undefined && !item.style) {
+
+	if (item.text === undefined && !item.rich && item.name === undefined && !item.style) {
 		setStatus('#editStatus', tr('edit.done'), 'ok');   // 変更なし
 		return;
 	}
@@ -436,10 +534,11 @@ async function applyEdit() {
 	try {
 		const res = await request('applyTexts', { items: [item] });
 		if ((res.errors || []).length) throw new Error(res.errors[0].message);
-		if (item.text !== undefined) editTarget.orig = text;
+		editTarget.orig = text;
 		if (item.name !== undefined) editTarget.origName = name;
-		if (item.style) {
-			Object.assign(editTarget.origStyle, item.style);
+		if (item.rich) editTarget.richBase = editSelBase();
+		if (style) {
+			Object.assign(editTarget.origStyle, style);
 			for (const k of Object.keys(editTouched)) editTouched[k] = false;
 		}
 		setStatus('#editStatus', tr('edit.done'), 'ok');
@@ -547,13 +646,38 @@ function closeSheetDialog() {
 }
 
 function buildSheet() {
-	sheetRows = sheetTargets().map(r => ({
+	const targets = sheetTargets();
+	sheetRows = targets.map(r => ({
 		id: r.id,
 		nameOrig: r.name, nameVal: r.name,
 		orig: r.body || '', val: r.body || '',
 		elName: null, elText: null,
+		useRich: false, richBase: null,
 	}));
 	renderSheet();
+	loadSheetRich(targets.map(r => r.id));
+}
+
+/// 各行のタグ付き本文を後追いで読み込む (未編集の行だけ差し替える)
+async function loadSheetRich(ids) {
+	if (!ids.length) return;
+	try {
+		const res = await request('getRichMany', { ids });
+		for (const r of sheetRows) {
+			const d = (res.map || {})[r.id];
+			if (!d || d.message) continue;
+			const unedited = r.val === r.orig;
+			r.useRich = true;
+			r.richBase = baseStyle((d.ranges || [])[0] || {});
+			r.orig = rangesToTagged(d.text || '', d.ranges || []);
+			if (unedited) {
+				r.val = r.orig;
+				if (r.elText && document.activeElement !== r.elText) r.elText.value = r.val;
+			}
+			markRow(r);
+		}
+		updateSheetCounts();
+	} catch (e) { /* プレーンのまま編集できる */ }
 }
 
 function renderSheet() {
@@ -659,7 +783,10 @@ async function applySheet() {
 		const res = await request('applyTexts', {
 			items: todo.map(r => {
 				const item = { id: r.id };
-				if (textChanged(r)) item.text = r.val;
+				if (textChanged(r)) {
+					if (r.useRich) item.rich = taggedToRich(r.val, r.richBase);
+					else item.text = r.val;
+				}
 				if (nameChanged(r)) item.name = r.nameVal;
 				return item;
 			}),
@@ -679,20 +806,23 @@ async function applySheet() {
 	updateSheetCounts();
 }
 
-/// PS 側の更新が届いたら、未編集の欄だけ追従させる (編集中の値は守る)
+/// PS 側の更新が届いたら、未編集の欄だけ追従させる (編集中の値は守る)。
+/// rich 行の本文はツリーのプレーン本文では同期できないので触らない。
 function refreshSheetFromTree() {
 	if ($('#sheetDialog').hidden || !sheetRows.length) return;
 	for (const r of sheetRows) {
 		const fresh = state.byId.get(r.id);
 		if (!fresh) continue;
-		const textUnedited = r.val === r.orig;
-		const nameUnedited = r.nameVal === r.nameOrig;
-		r.orig = fresh.body || '';
-		r.nameOrig = fresh.name;
-		if (textUnedited) {
-			r.val = r.orig;
-			if (r.elText && document.activeElement !== r.elText) r.elText.value = r.val;
+		if (!r.useRich) {
+			const textUnedited = r.val === r.orig;
+			r.orig = fresh.body || '';
+			if (textUnedited) {
+				r.val = r.orig;
+				if (r.elText && document.activeElement !== r.elText) r.elText.value = r.val;
+			}
 		}
+		const nameUnedited = r.nameVal === r.nameOrig;
+		r.nameOrig = fresh.name;
 		if (nameUnedited) {
 			r.nameVal = r.nameOrig;
 			if (r.elName && document.activeElement !== r.elName) r.elName.value = r.nameVal;
@@ -1103,6 +1233,19 @@ function wire() {
 		$(id).addEventListener('change', () => { editTouched[key] = true; });
 	}
 	attachFontCombo($('#editFont'), () => { editTouched.font = true; });
+
+	// 選択範囲への書式付け
+	$('#fmtB').addEventListener('click', () => toggleFlagTag('bold'));
+	$('#fmtI').addEventListener('click', () => toggleFlagTag('italic'));
+	$('#fmtU').addEventListener('click', () => toggleFlagTag('underline'));
+	$('#fmtSizeApply').addEventListener('click', () => {
+		const v = parseFloat($('#fmtSize').value);
+		if (v > 0) applyRangeTag({ size: v });
+	});
+	$('#fmtColorApply').addEventListener('click', () => {
+		applyRangeTag({ color: $('#fmtColor').value.toUpperCase() });
+	});
+	$('#fmtReset').addEventListener('click', resetRangeTag);
 	attachFontCombo($('#stFont'), () => {
 		$('#stUseFont').checked = true;   // フォントを選んだ＝適用したいはず
 		updateStyleCounts();
@@ -1163,7 +1306,8 @@ function installMock() {
 					for (const it of msg.items) {
 						const r = rows.find(x => x.id === it.id);
 						if (!r) continue;
-						if (typeof it.text === 'string') r.body = it.text;
+						if (it.rich) r.body = it.rich.text;
+						else if (typeof it.text === 'string') r.body = it.text;
 						if (typeof it.name === 'string' && it.name.trim()) r.name = it.name;
 					}
 					onMessage({ type: 'textResult', reqId: msg.reqId, applied: msg.items.length, errors: [] });
@@ -1177,6 +1321,22 @@ function installMock() {
 				} else if (msg.type === 'getStyle') {
 					onMessage({ type: 'style', reqId: msg.reqId,
 						style: { font: 'ArialMT', size: 24, color: '#ff8800', align: 'center' } });
+				} else if (msg.type === 'getRich') {
+					const r = rows.find(x => x.id === msg.id);
+					onMessage({ type: 'rich', reqId: msg.reqId,
+						text: r ? r.body : '',
+						ranges: r ? [{ from: 0, to: r.body.length, font: 'ArialMT', size: 24,
+						               color: '#ff8800', bold: false, italic: false, underline: false }] : [] });
+				} else if (msg.type === 'getRichMany') {
+					const map = {};
+					for (const id of msg.ids || []) {
+						const r = rows.find(x => x.id === id);
+						map[id] = r ? { text: r.body,
+							ranges: [{ from: 0, to: r.body.length, font: 'ArialMT', size: 24,
+							           color: '#ff8800', bold: false, italic: false, underline: false }] }
+							: { message: 'not found' };
+					}
+					onMessage({ type: 'richMany', reqId: msg.reqId, map });
 				} else if (msg.type === 'getUsedFonts') {
 					onMessage({ type: 'usedFonts', reqId: msg.reqId,
 						fonts: ['ArialMT', 'HiraginoSans-W3'] });

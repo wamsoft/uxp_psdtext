@@ -188,6 +188,10 @@ table.sheet tr.hit td { background: var(--hit); }
 input.num { width: 64px; }
 input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
 
+.fmt-bar { gap: 4px; align-items: center; }
+.fmt-bar .fmt-sep { width: 6px; }
+.fmt-bar input.num { width: 56px; }
+
 .font-combo { position: relative; }
 .font-combo input { width: 100%; }
 .font-drop {
