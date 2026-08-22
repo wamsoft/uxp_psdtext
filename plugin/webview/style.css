@@ -250,11 +250,11 @@ table.sheet th.on { opacity: 1; }
 .st-fields .row { flex-wrap: wrap; }
 .st-name { min-width: 4.5em; }
 input.num { width: 64px; }
-input[type=color] { padding: 1px 2px; width: 48px; height: 24px; }
+input[type=color] { flex: none; padding: 1px 2px; width: 48px; height: 24px; }
 
-.fmt-bar { gap: 4px; align-items: center; flex-wrap: nowrap; }
+.fmt-bar { gap: 4px; align-items: center; flex-wrap: wrap; }
 .fmt-bar .fmt-sep { width: 6px; }
-.fmt-bar input.num { width: 56px; }
+.fmt-bar input.num { flex: none; width: 56px; }
 .fmt-bar .fmt-font { flex: 1; min-width: 90px; }
 
 .font-combo { position: relative; }
