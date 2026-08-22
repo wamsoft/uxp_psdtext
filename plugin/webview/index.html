@@ -125,9 +125,18 @@
 						<option value="sel" data-i18n="sheet.target.sel">Selected</option>
 					</select>
 				</label>
-				<button id="shCopy" data-i18n="sheet.copy"
-					data-i18n-title="sheet.copy.title">Copy as TSV</button>
 				<span id="shCount" class="hint"></span>
+			</div>
+			<div class="row" style="align-items:center">
+				<span class="hint" data-i18n="sheet.cols">Copy / paste columns</span>
+				<button class="mini" data-cols="text" data-i18n="sheet.colsText">Body only</button>
+				<button class="mini" data-cols="style" data-i18n="sheet.colsStyle">Formatting only</button>
+				<button class="mini" data-cols="name" data-i18n="sheet.colsName">Name only</button>
+				<button class="mini" data-cols="notname" data-i18n="sheet.colsNotName">All but name</button>
+				<button class="mini" data-cols="all" data-i18n="sheet.colsAll">All</button>
+				<span class="spacer"></span>
+				<button id="shCopy" class="mini" data-i18n="sheet.copy"
+					data-i18n-title="sheet.copy.title">Copy table</button>
 			</div>
 			<div class="sheet-wrap">
 				<table id="shTable" class="sheet"></table>
@@ -180,14 +189,16 @@
 					<li><b>テキスト全選択</b>: 表示中のテキストレイヤを全部選択</li>
 				</ul>
 				<h3>まとめて編集…</h3>
-				<p>対象 (全テキストレイヤ / 選択中) を表にして、<b>レイヤ名と本文</b>を編集する。
-				変わった行は色が付き、<b>適用</b>で変わった行だけが Photoshop に反映される。
-				適用は履歴 1 段なので <b>Ctrl+Z 1 回で全部戻る</b>。名前を空にした行は名前を変えない。
-				規則ベースの一括リネーム (連番・検索置換) は姉妹ツールの PSD Power Rename へ。</p>
-				<p><b>TSV でコピー</b>で「レイヤ名 (タブ) 本文」をクリップボードへ書き出せる。
-				Excel やスプレッドシートで編集して、表の貼り付け開始行のセルに貼り付けると
-				<b>下方向にまとめて流し込まれる</b>。1 列だけ貼ると貼った列 (名前 or 本文) に、
-				<b>2 列以上を貼ると先頭列が名前・最後の列が本文</b>になる。</p>
+				<p>対象 (全テキストレイヤ / 選択中) を表にして、<b>レイヤ名・本文・基準書式
+				(フォント / サイズ / 色 / 揃え)</b> を列ごとに編集する。変わったセルに色が付き、
+				<b>適用</b>で変わった行だけが Photoshop に反映される。適用は履歴 1 段なので
+				<b>Ctrl+Z 1 回で全部戻る</b>。書式列を変えても本文途中の部分書式は保たれるが、
+				<b>本文を書き換えた行は途中の書式が外れる</b> (件数を報告)。
+				規則ベースの一括リネームは姉妹ツールの PSD Power Rename へ。</p>
+				<p><b>見出しのチェック</b> (またはプリセットボタン) で、コピー / 貼り付けに
+				効かせる列を選ぶ。<b>表をコピー</b>は対象列だけを TSV で書き出し、
+				Excel で編集して<b>セルに貼り付けると、そのセルを起点に右の対象列 →
+				下の行へ流し込まれる</b>。編集そのものはチェックに関係なくいつでもできる。</p>
 				<h3>部分書式</h3>
 				<p>単体編集の本文は<b>見たまま編集</b> (エディタエンジンは Quill)。
 				太字・色・フォント・サイズ・<b>行ごとの揃え</b>がそのまま表示され、
@@ -197,11 +208,10 @@
 				基準が約 14px になるよう縮めてある (実サイズは pt の値のとおり)。</p>
 				<p>右上の<b>「タグ」ボタン</b>でタグ編集モードに切り替えられる
 				(一括置換など、テキストとして書式をいじりたいとき用)。</p>
-				<p>まとめて編集の表と TSV では、部分書式は<b>タグ表記</b>で運ばれる:
-				<code>[b]太字[/b]</code> <code>[size=96]大きく[/size]</code>
-				<code>[color=#FF0000]赤[/color]</code> <code>[font=...]</code> <code>[reset]</code>。
-				閉じタグは「基準へ戻す」の意味。文字としての <code>[</code> は
-				<code>[[</code> と書く。タグごと Excel 往復できる。</p>
+				<p>タグモードの文法: <code>[b]太字[/b]</code>
+				<code>[size=96]大きく[/size]</code> <code>[color=#FF0000]赤[/color]</code>
+				<code>[font=...]</code> <code>[reset]</code>。閉じタグは「基準へ戻す」の意味。
+				文字としての <code>[</code> は <code>[[</code> と書く。</p>
 				<h3>その他</h3>
 				<ul>
 					<li>セル内の改行はそのままレイヤの改行になる</li>
@@ -224,17 +234,18 @@
 					<li><b>Select all text</b>: selects every listed text layer</li>
 				</ul>
 				<h3>Edit all…</h3>
-				<p>Puts the targets (every text layer, or the selection) in a table where both the
-				<b>layer names and the contents</b> can be edited.
-				Changed rows are highlighted; <b>Apply</b> sends only the changed rows to Photoshop
-				as a single history step, so <b>one Ctrl+Z undoes everything</b>.
-				Rows with an emptied name keep their name. For rule-based bulk renaming
-				(numbering, find &amp; replace) see the sister tool PSD Power Rename.</p>
-				<p><b>Copy as TSV</b> puts "layer name (tab) contents" on the clipboard.
-				Edit in Excel or a spreadsheet and paste back into the cell where the fill
-				should start — the rows <b>flow downwards</b>. A single pasted column goes into
-				the column you pasted into (name or contents); <b>with two or more columns the
-				first becomes the name and the last the contents</b>.</p>
+				<p>Puts the targets (every text layer, or the selection) in a table with columns
+				for the <b>layer name, contents and base style (font / size / color /
+				alignment)</b>. Changed cells are highlighted; <b>Apply</b> sends only the
+				changed rows as a single history step, so <b>one Ctrl+Z undoes everything</b>.
+				Style-column edits keep the formatting inside the body; <b>rewriting the body
+				drops it</b> (reported per row). For rule-based bulk renaming see the sister
+				tool PSD Power Rename.</p>
+				<p>The <b>header checkboxes</b> (or the preset buttons) choose which columns
+				copy &amp; paste touch. <b>Copy table</b> writes the target columns as TSV;
+				edit in Excel and <b>paste into a cell — it flows right through the target
+				columns and down the rows from that cell</b>. Editing itself always works,
+				regardless of the checkboxes.</p>
 				<h3>Per-range formatting</h3>
 				<p>The single-layer editor is <b>WYSIWYG</b> (powered by Quill). Bold, colors,
 				fonts, sizes and <b>per-line alignment</b> render as they are; select a range
@@ -244,11 +255,10 @@
 				14px (the real pt values are unchanged).</p>
 				<p>The <b>"Tags" button</b> switches to tag-editing mode, for when you want
 				to manipulate formatting as text (bulk replacements etc.).</p>
-				<p>The bulk-edit table and the TSV carry per-range formatting as
-				<b>tags</b>: <code>[b]bold[/b]</code> <code>[size=96]big[/size]</code>
+				<p>Tag-mode syntax: <code>[b]bold[/b]</code> <code>[size=96]big[/size]</code>
 				<code>[color=#FF0000]red[/color]</code> <code>[font=...]</code>
 				<code>[reset]</code>. A closing tag means "back to the base style"; a literal
-				<code>[</code> is written <code>[[</code>. Tags survive Excel round-trips.</p>
+				<code>[</code> is written <code>[[</code>.</p>
 				<h3>Misc</h3>
 				<ul>
 					<li>Line breaks inside a cell become line breaks in the layer</li>

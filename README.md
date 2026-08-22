@@ -17,15 +17,14 @@ Companion to [uxp_psdrename](https://github.com/wamsoft/uxp_psdrename)
   underline / size / color and per-line alignment render and edit as-is,
   with undo/redo inside the editor; a "Tags" toggle switches to text-based
   tag editing
-- **Bulk edit ("Edit all…")**: the target text layers in an editable table —
-  **layer names and contents** both editable, changed rows are highlighted
-  and only they are applied (rule-based bulk renaming lives in uxp_psdrename)
-- **Clipboard TSV instead of CSV**:
-  - *Copy as TSV* puts `layer name ⇥ contents` on the clipboard for Excel /
-    spreadsheets (cells with tabs, quotes or line breaks are quoted,
-    Excel-style)
-  - Pasting multi-row data into a cell **flows downwards** from that row;
-    when the clipboard has several columns, the last column is used
+- **Bulk edit ("Edit all…") with psdtext-style columns**: name / contents /
+  font / size / color / alignment per row, only changed rows applied;
+  style edits keep the formatting inside the body, and header checkboxes
+  (with presets like "body only" / "formatting only") choose which columns
+  copy &amp; paste touch (rule-based bulk renaming lives in uxp_psdrename)
+- **Clipboard TSV instead of CSV**: *Copy table* writes the target columns
+  Excel-style (quoted cells); pasting into a cell **flows right through the
+  target columns and down the rows** from that cell
 - Line breaks round-trip correctly (Photoshop's `\r` ⇄ `\n`)
 - Applying is **one history step** — a single Ctrl+Z undoes the whole batch
 - Bilingual UI (English default / 日本語) with a built-in guide

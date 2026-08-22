@@ -152,7 +152,7 @@ function applyTree(msg) {
 
 	renderAll();
 	refreshEditFromTree();
-	refreshSheetFromTree();
+	// シートは開いた時点のスナップショット (適用時に読み直す)。ここでは触らない
 }
 
 //---------------------------------------------------------------------------
@@ -895,27 +895,50 @@ async function copyToClipboard(text) {
 }
 
 //---------------------------------------------------------------------------
-// 一覧編集シート
+// 一覧編集シート (psdtext の一覧編集の移植)
 //
-// 対象テキストレイヤを表にして本文をまとめて編集する。psdtext の一覧編集の
-// 移植。変わった行だけ適用され、履歴 1 段にまとまる。
+// カラム: 名前 / 本文 (プレーン) / フォント / サイズ / 色 / 揃え。
+// 書式カラムは基準 (先頭ラン) の値で、変えても本文途中の部分書式は温存する。
+// 本文を書き換えた行だけは途中の書式が落ちる (psdtext と同じ。件数を報告)。
+// 見出しのチェックは「コピー / 貼り付けをどの列に効かせるか」で、
+// 編集そのものはチェックに関係なくできる。
 //---------------------------------------------------------------------------
 
-let sheetRows = [];   ///< [{id, nameOrig, nameVal, orig, val, elName, elText}]
+const SHEET_COLS = ['name', 'text', 'font', 'size', 'color', 'align'];
+const SHEET_PRESETS = {
+	text:    ['text'],
+	style:   ['font', 'size', 'color', 'align'],
+	name:    ['name'],
+	notname: SHEET_COLS.filter(k => k !== 'name'),
+	all:     SHEET_COLS,
+};
+
+let sheetRows = [];      ///< [{id, vals, orig, rich, marks, els}]
+let sheetColSel = null;  ///< コピペ対象カラム (Set。null = 全部)
 
 function sheetTargets() {
 	const mode = $('#shTarget').value;
 	return state.rows.filter(r => r.text && (mode === 'text' || state.multi.has(r.id)));
 }
 
-/// 名前は空にできない (空欄は「変えない」扱い)
-function nameChanged(r) { return !!r.nameVal.trim() && r.nameVal !== r.nameOrig; }
-function textChanged(r) { return r.val !== r.orig; }
-function rowChanged(r)  { return nameChanged(r) || textChanged(r); }
+function sheetColOn(key) {
+	return !sheetColSel || sheetColSel.has(key);
+}
 
-function markRow(r) {
-	const tr_ = r.elText && r.elText.closest('tr');
-	if (tr_) tr_.classList.toggle('hit', rowChanged(r));
+function sheetColsOn() {
+	return SHEET_COLS.filter(sheetColOn);
+}
+
+function sheetCellChanged(r, key) {
+	return String(r.vals[key]) !== String(r.orig[key]);
+}
+
+function sheetRowChanged(r) {
+	// 名前は空にできない (空欄は「変えない」扱い)
+	return SHEET_COLS.some(k => {
+		if (k === 'name' && !String(r.vals.name).trim()) return false;
+		return sheetCellChanged(r, k);
+	});
 }
 
 function openSheetDialog() {
@@ -925,27 +948,28 @@ function openSheetDialog() {
 	buildSheet();
 	setStatus('#shStatus', '');
 	$('#sheetDialog').hidden = false;
+	ensureFonts();
+	refreshUsedFonts();
 }
 
 function closeSheetDialog() {
 	$('#sheetDialog').hidden = true;
+	closeCellMenu();
 	sheetRows = [];
 }
 
+/// 表の元データを作り直す (画面の値は捨てる)。書式は rich を後追いで読む
 function buildSheet() {
 	const targets = sheetTargets();
-	sheetRows = targets.map(r => ({
-		id: r.id,
-		nameOrig: r.name, nameVal: r.name,
-		orig: r.body || '', val: r.body || '',
-		elName: null, elText: null,
-		useRich: false, richBase: null,
-	}));
+	sheetRows = targets.map(r => {
+		const vals = { name: r.name, text: r.body || '', font: '', size: 0,
+		               color: '#000000', align: 'left' };
+		return { id: r.id, vals, orig: { ...vals }, rich: null, marks: 0, els: {} };
+	});
 	renderSheet();
 	loadSheetRich(targets.map(r => r.id));
 }
 
-/// 各行のタグ付き本文を後追いで読み込む (未編集の行だけ差し替える)
 async function loadSheetRich(ids) {
 	if (!ids.length) return;
 	try {
@@ -953,170 +977,351 @@ async function loadSheetRich(ids) {
 		for (const r of sheetRows) {
 			const d = (res.map || {})[r.id];
 			if (!d || d.message) continue;
-			const unedited = r.val === r.orig;
-			r.useRich = true;
-			r.richBase = baseStyle((d.ranges || [])[0] || {});
-			r.orig = rangesToTagged(d.text || '', d.ranges || []);
-			if (unedited) {
-				r.val = r.orig;
-				if (r.elText && document.activeElement !== r.elText) r.elText.value = r.val;
+			const edited = SHEET_COLS.filter(k => sheetCellChanged(r, k));
+			const b = baseStyle((d.ranges || [])[0] || {});
+			r.rich = { text: d.text || '', ranges: d.ranges || [],
+			           paragraphs: d.paragraphs || [] };
+			r.marks = Math.max(0, (d.ranges || []).length - 1);
+			const fresh = {
+				name: r.orig.name,
+				text: d.text || '',
+				font: b.font, size: b.size, color: b.color,
+				align: ((d.paragraphs || [])[0] || {}).align || 'left',
+			};
+			for (const k of SHEET_COLS) {
+				r.orig[k] = fresh[k];
+				if (!edited.includes(k)) r.vals[k] = fresh[k];   // 編集中の値は守る
 			}
-			markRow(r);
 		}
-		updateSheetCounts();
-	} catch (e) { /* プレーンのまま編集できる */ }
+		renderSheet();
+	} catch (e) { /* 書式カラムが空のまま。本文と名前は編集できる */ }
 }
 
 function renderSheet() {
+	closeCellMenu();
 	const table = $('#shTable');
 	table.textContent = '';
 
+	// 見出し: コピー / 貼り付けの対象カラムをチェックで選ぶ
 	const head = document.createElement('tr');
-	for (const k of ['name', 'text']) {
+	for (const key of SHEET_COLS) {
 		const th = document.createElement('th');
-		th.textContent = tr('sheet.col.' + k);
-		th.className = 'c-sh-' + k;
+		th.className = 'c-sh-' + key + (sheetColOn(key) ? ' on' : '');
+		const lab = document.createElement('label');
+		const cb = document.createElement('input');
+		cb.type = 'checkbox';
+		cb.checked = sheetColOn(key);
+		cb.title = tr('sheet.colTarget');
+		cb.addEventListener('change', () => {
+			sheetColSel = new Set(SHEET_COLS.filter(k =>
+				k === key ? cb.checked : sheetColOn(k)));
+			renderSheet();
+		});
+		lab.append(cb, document.createTextNode(tr('sheet.col.' + key)));
+		th.appendChild(lab);
 		head.appendChild(th);
 	}
 	table.appendChild(head);
 
-	sheetRows.forEach((r, idx) => {
+	sheetRows.forEach((r, i) => {
 		const line = document.createElement('tr');
-
-		const nameCell = document.createElement('td');
-		nameCell.className = 'c-sh-name';
-		const ni = document.createElement('input');
-		ni.type = 'text';
-		ni.value = r.nameVal;
-		ni.spellcheck = false;
-		ni.addEventListener('input', () => {
-			r.nameVal = ni.value;
-			markRow(r);
-			updateSheetCounts();
-		});
-		ni.addEventListener('paste', (e) => sheetPaste(e, idx, 'name'));
-		nameCell.appendChild(ni);
-		r.elName = ni;
-
-		const cell = document.createElement('td');
-		cell.className = 'c-sh-text';
-		const ta = document.createElement('textarea');
-		ta.rows = 1;
-		ta.value = r.val;
-		ta.spellcheck = false;
-		ta.addEventListener('input', () => {
-			r.val = ta.value;
-			markRow(r);
-			updateSheetCounts();
-		});
-		ta.addEventListener('paste', (e) => sheetPaste(e, idx, 'text'));
-		cell.appendChild(ta);
-		r.elText = ta;
-
-		if (rowChanged(r)) line.classList.add('hit');
-		line.append(nameCell, cell);
+		line.appendChild(sheetCell(r, i, 'name'));
+		line.appendChild(sheetCell(r, i, 'text'));
+		line.appendChild(sheetCell(r, i, 'font'));
+		line.appendChild(sheetCell(r, i, 'size'));
+		line.appendChild(sheetCell(r, i, 'color'));
+		line.appendChild(sheetAlignCell(r, i));
 		table.appendChild(line);
 	});
 
 	updateSheetCounts();
 }
 
+function sheetCell(r, i, key) {
+	const td = document.createElement('td');
+	td.className = 'c-sh-' + key + (sheetCellChanged(r, key) ? ' edited' : '');
+	const styleCol = key !== 'name' && key !== 'text';
+	if (styleCol && !r.rich) { td.classList.add('off'); return td; }
+
+	const el = document.createElement(key === 'text' ? 'textarea' : 'input');
+	if (key === 'text') {
+		el.rows = Math.min(4, String(r.vals.text || '').split('\n').length);
+		el.spellcheck = false;
+		if (r.marks) el.title = tr('sheet.marksNote', r.marks);
+	} else {
+		el.type = 'text';
+		el.spellcheck = false;
+	}
+	el.value = key === 'size'
+		? (r.vals.size ? String(Math.round(r.vals.size * 10) / 10) : '')
+		: (r.vals[key] ?? '');
+	if (key === 'font' && r.vals.font) {
+		const f = fontsCache.find(x => x.ps === r.vals.font);
+		if (f) el.title = fontLabel(f);
+	}
+	el.dataset.row = String(i);
+	el.dataset.key = key;
+	el.addEventListener('input', onSheetInput);
+	el.addEventListener('paste', onSheetPaste);
+	td.appendChild(el);
+	r.els[key] = el;
+
+	if (key === 'font') {
+		// ▾ でお気に入り + 使用中フォントの候補を出す
+		const btn = document.createElement('button');
+		btn.className = 'mini cell-btn';
+		btn.textContent = '▾';
+		btn.title = tr('sheet.fontPick');
+		btn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			openCellFontMenu(btn, i);
+		});
+		td.appendChild(btn);
+	}
+	if (key === 'color') {
+		const sw = document.createElement('input');
+		sw.type = 'color';
+		sw.className = 'swatch';
+		if (/^#[0-9a-fA-F]{6}$/.test(r.vals.color || '')) sw.value = r.vals.color.toLowerCase();
+		sw.addEventListener('change', () => {
+			r.vals.color = sw.value.toUpperCase();
+			el.value = r.vals.color;
+			td.classList.toggle('edited', sheetCellChanged(r, 'color'));
+			updateSheetCounts();
+		});
+		td.appendChild(sw);
+	}
+	return td;
+}
+
+const ALIGN_KEYS = ['left', 'center', 'right', 'justify'];
+
+function sheetAlignCell(r, i) {
+	const td = document.createElement('td');
+	td.className = 'c-sh-align' + (sheetCellChanged(r, 'align') ? ' edited' : '');
+	if (!r.rich) { td.classList.add('off'); return td; }
+	const sel = document.createElement('select');
+	for (const a of ALIGN_KEYS) {
+		const o = document.createElement('option');
+		o.value = a;
+		o.textContent = tr('al.' + a);
+		sel.appendChild(o);
+	}
+	sel.value = r.vals.align || 'left';
+	sel.dataset.row = String(i);
+	sel.dataset.key = 'align';
+	sel.addEventListener('change', () => {
+		r.vals.align = sel.value;
+		td.classList.toggle('edited', sheetCellChanged(r, 'align'));
+		updateSheetCounts();
+	});
+	td.appendChild(sel);
+	r.els.align = sel;
+	return td;
+}
+
+/// セル入力。作り直すとカーソルが飛ぶので、印とボタンだけ更新する
+function onSheetInput(e) {
+	const r = sheetRows[Number(e.target.dataset.row)];
+	const key = e.target.dataset.key;
+	if (!r) return;
+	r.vals[key] = key === 'size' ? (parseFloat(e.target.value) || 0) : e.target.value;
+	e.target.parentNode.classList.toggle('edited', sheetCellChanged(r, key));
+	updateSheetCounts();
+}
+
 function updateSheetCounts() {
-	const n = sheetRows.filter(rowChanged).length;
+	const n = sheetRows.filter(sheetRowChanged).length;
 	$('#shCount').textContent = tr('sheet.count', sheetRows.length, n);
 	$('#shApply').disabled = !n;
 	$('#shApply').textContent = n ? tr('sheet.applyN', n) : tr('sheet.apply');
 }
 
-/// セルへの貼り付け。複数行 (または複数列) の TSV なら、その行から下へ
-/// まとめて流し込む。1 列なら貼り付けた列 (名前 or 本文) へ、
-/// 2 列以上なら先頭列を名前・最後の列を本文として使う。
-function sheetPaste(e, startIdx, col) {
-	const text = (e.clipboardData || window.clipboardData).getData('text');
-	if (!text) return;
-	const rows = parseTsv(text);
-	if (rows.length <= 1 && (rows[0] || []).length <= 1) return;  // 通常の貼り付けに任せる
-	e.preventDefault();
-	rows.forEach((cols, i) => {
-		const r = sheetRows[startIdx + i];
-		if (!r) return;
-		if (cols.length >= 2) {
-			r.nameVal = cols[0];
-			r.val = cols[cols.length - 1];
-		} else if (col === 'name') {
-			r.nameVal = cols[0];
-		} else {
-			r.val = cols[0];
-		}
-		if (r.elName) r.elName.value = r.nameVal;
-		if (r.elText) r.elText.value = r.val;
-		markRow(r);
+//--- フォントセルの候補メニュー (お気に入り + 使用中) ----------------------
+
+function openCellFontMenu(anchor, i) {
+	closeCellMenu();
+	const menu = document.createElement('div');
+	menu.className = 'cell-menu';
+	menu.id = 'cellFontMenu';
+	const cand = [...new Set([...favFonts, ...usedFonts])].map(fontByPs)
+		.sort((a, b) => fontLabel(a).localeCompare(fontLabel(b), 'ja'));
+	for (const f of cand) {
+		const d = document.createElement('div');
+		d.className = 'cell-menu-row' + (f.ps === sheetRows[i].vals.font ? ' on' : '');
+		const n = document.createElement('span');
+		n.textContent = fontLabel(f);
+		const s = document.createElement('span');
+		s.className = 'hint';
+		s.textContent = f.ps;
+		d.append(n, s);
+		d.addEventListener('mousedown', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			const r = sheetRows[i];
+			r.vals.font = f.ps;
+			if (r.els.font) {
+				r.els.font.value = f.ps;
+				r.els.font.parentNode.classList.toggle('edited', sheetCellChanged(r, 'font'));
+			}
+			updateSheetCounts();
+			closeCellMenu();
+		});
+		menu.appendChild(d);
+	}
+	const more = document.createElement('div');
+	more.className = 'cell-menu-row more';
+	more.textContent = tr('sheet.fontMore');
+	more.addEventListener('mousedown', (e) => {
+		e.preventDefault();
+		closeCellMenu();
+		openFontMgr();
 	});
-	updateSheetCounts();
+	menu.appendChild(more);
+
+	document.body.appendChild(menu);
+	const rect = anchor.getBoundingClientRect();
+	menu.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+	const below = window.innerHeight - rect.bottom;
+	menu.style.top = (below < menu.offsetHeight + 8 && rect.top > below)
+		? Math.max(4, rect.top - menu.offsetHeight - 2) + 'px'
+		: (rect.bottom + 2) + 'px';
+	setTimeout(() => document.addEventListener('mousedown', closeCellMenu, { once: true }), 0);
+}
+
+function closeCellMenu() {
+	const m = document.getElementById('cellFontMenu');
+	if (m) m.remove();
+}
+
+//--- コピー / 貼り付け ------------------------------------------------------
+
+/// 揃えのテキスト表現 (コピー用) と、その逆
+function alignText(a) { return tr('al.' + (a || 'left')); }
+
+function alignFromText(s, def) {
+	const v = String(s).trim().toLowerCase();
+	if (ALIGN_KEYS.includes(v)) return v;
+	const ja = { '左': 'left', '左揃え': 'left', '中央': 'center', '中央揃え': 'center',
+	             '右': 'right', '右揃え': 'right', '両端': 'justify', '両端揃え': 'justify' };
+	return ja[String(s).trim()] || def;
+}
+
+function sheetCellText(r, key) {
+	if (key === 'align') return alignText(r.vals.align);
+	if (key === 'size') return r.vals.size ? String(Math.round(r.vals.size * 10) / 10) : '';
+	return String(r.vals[key] ?? '');
 }
 
 async function copySheet() {
-	const tsv = sheetRows.map(r => tsvField(r.nameVal) + '\t' + tsvField(r.val)).join('\n');
+	const cols = sheetColsOn();
+	if (!cols.length) { setStatus('#shStatus', tr('sheet.noCols'), 'error'); return; }
+	const tsv = sheetRows
+		.map(r => cols.map(k => tsvField(sheetCellText(r, k))).join('\t')).join('\n');
 	const ok = await copyToClipboard(tsv);
-	setStatus('#shStatus', ok ? tr('sheet.copied') : 'copy failed', ok ? 'ok' : 'error');
+	setStatus('#shStatus', ok ? tr('sheet.copied', sheetRows.length, cols.length) : 'copy failed',
+	          ok ? 'ok' : 'error');
 }
 
+/// 貼り付けた中身を startRow から下へ、cols の順に配る
+function spreadIntoSheet(text, startRow, cols, note) {
+	let n = 0;
+	parseTsv(text).forEach((line, dy) => {
+		const r = sheetRows[startRow + dy];
+		if (!r) return;
+		line.forEach((cell, dx) => {
+			const key = cols[dx];
+			if (!key) return;
+			if (key !== 'name' && key !== 'text' && !r.rich) return;   // 書式が読めない行
+			if (key === 'size') r.vals.size = parseFloat(cell) || r.vals.size;
+			else if (key === 'align') r.vals.align = alignFromText(cell, r.vals.align);
+			else if (key === 'color') {
+				const h = String(cell).trim();
+				if (/^#?[0-9a-fA-F]{6}$/.test(h)) r.vals.color = '#' + h.replace('#', '').toUpperCase();
+			} else r.vals[key] = cell;
+			n++;
+		});
+	});
+	renderSheet();
+	setStatus('#shStatus', (note ? note + ' / ' : '') + tr('sheet.pasted', n));
+}
+
+/// セルの中で受けた貼り付け。そのセルが起点になり、右へ「対象カラム」だけに流れる
+function onSheetPaste(e) {
+	const text = (e.clipboardData || window.clipboardData).getData('text');
+	if (!text || !/[\t\n]/.test(text.trim())) return;   // 1 セルぶんは通常の貼り付け
+	const all = sheetColsOn();
+	if (!all.length) { e.preventDefault(); setStatus('#shStatus', tr('sheet.noCols'), 'error'); return; }
+	const at = all.indexOf(e.target.dataset.key);
+	const note = at < 0 ? tr('sheet.colOff', tr('sheet.col.' + e.target.dataset.key)) : '';
+	e.preventDefault();
+	spreadIntoSheet(text, Number(e.target.dataset.row) || 0, at < 0 ? all : all.slice(at), note);
+}
+
+//--- 適用 -------------------------------------------------------------------
+
 async function applySheet() {
-	const todo = sheetRows.filter(rowChanged);
+	const todo = sheetRows.filter(sheetRowChanged);
 	if (!todo.length) return;
 	setStatus('#shStatus', tr('sheet.working'));
 	$('#shApply').disabled = true;
-	try {
-		const res = await request('applyTexts', {
-			items: todo.map(r => {
-				const item = { id: r.id };
-				if (textChanged(r)) {
-					if (r.useRich) item.rich = taggedToRich(r.val, r.richBase);
-					else item.text = r.val;
-				}
-				if (nameChanged(r)) item.name = r.nameVal;
-				return item;
-			}),
-		});
-		const failed = (res.errors || []).length;
-		const failedIds = new Set((res.errors || []).map(er => er.id));
-		for (const r of todo) {
-			if (!failedIds.has(r.id)) { r.orig = r.val; r.nameOrig = r.nameVal; }
-			markRow(r);
+	let lostMarks = 0;
+	const items = todo.map(r => {
+		const item = { id: r.id };
+		if (String(r.vals.name).trim() && sheetCellChanged(r, 'name')) item.name = r.vals.name;
+
+		const textChanged = sheetCellChanged(r, 'text');
+		const styleChanged = ['font', 'size', 'color'].some(k => sheetCellChanged(r, k));
+		const alignChanged = sheetCellChanged(r, 'align');
+
+		if (!r.rich) {
+			// 書式が読めなかった行はプレーン経路
+			if (textChanged) item.text = r.vals.text;
+			return item;
 		}
-		setStatus('#shStatus', failed ? tr('sheet.doneFailed', res.applied || 0, failed)
-		                              : tr('sheet.done', res.applied || 0),
-		          failed ? 'error' : 'ok');
+		if (!textChanged && !styleChanged && !alignChanged) return item;
+
+		const oldBase = baseStyle(r.rich.ranges[0] || {});
+		const newBase = { ...oldBase };
+		if (r.vals.font) newBase.font = r.vals.font;
+		if (r.vals.size > 0) newBase.size = r.vals.size;
+		if (/^#[0-9a-fA-F]{6}$/.test(r.vals.color || '')) newBase.color = r.vals.color;
+
+		let text, ranges, paragraphs;
+		if (textChanged) {
+			// 本文が変わると途中の書式は位置を失うので落とす (psdtext と同じ)
+			if (r.marks) lostMarks++;
+			text = r.vals.text;
+			ranges = [{ from: 0, to: text.length, ...newBase }];
+			paragraphs = remapParagraphs(r.rich.paragraphs, text);
+		} else {
+			text = r.rich.text;
+			// 基準と同じ値だった範囲だけ新しい基準へ連動させ、途中の書式は温存
+			ranges = r.rich.ranges.map(x => {
+				const st = baseStyle(x);
+				for (const k of ['font', 'size', 'color'])
+					if (sameValue(k, st[k], oldBase[k])) st[k] = newBase[k];
+				return { from: x.from, to: x.to, ...st };
+			});
+			paragraphs = r.rich.paragraphs.map(p => ({ ...p }));
+			if (!paragraphs.length) paragraphs = [{ from: 0, to: text.length, align: 'left' }];
+		}
+		if (alignChanged) for (const p of paragraphs) p.align = r.vals.align;
+		item.rich = { text, ranges, paragraphs };
+		return item;
+	}).filter(it => it.name !== undefined || it.text !== undefined || it.rich);
+
+	try {
+		const res = await request('applyTexts', { items });
+		const failed = (res.errors || []).length;
+		let msg = failed ? tr('sheet.doneFailed', res.applied || 0, failed)
+		        : lostMarks ? tr('sheet.doneLost', res.applied || 0, lostMarks)
+		                    : tr('sheet.done', res.applied || 0);
+		setStatus('#shStatus', msg, failed ? 'error' : 'ok');
 	} catch (e) {
 		setStatus('#shStatus', String(e.message || e), 'error');
 	}
-	updateSheetCounts();
-}
-
-/// PS 側の更新が届いたら、未編集の欄だけ追従させる (編集中の値は守る)。
-/// rich 行の本文はツリーのプレーン本文では同期できないので触らない。
-function refreshSheetFromTree() {
-	if ($('#sheetDialog').hidden || !sheetRows.length) return;
-	for (const r of sheetRows) {
-		const fresh = state.byId.get(r.id);
-		if (!fresh) continue;
-		if (!r.useRich) {
-			const textUnedited = r.val === r.orig;
-			r.orig = fresh.body || '';
-			if (textUnedited) {
-				r.val = r.orig;
-				if (r.elText && document.activeElement !== r.elText) r.elText.value = r.val;
-			}
-		}
-		const nameUnedited = r.nameVal === r.nameOrig;
-		r.nameOrig = fresh.name;
-		if (nameUnedited) {
-			r.nameVal = r.nameOrig;
-			if (r.elName && document.activeElement !== r.elName) r.elName.value = r.nameVal;
-		}
-		markRow(r);
-	}
-	updateSheetCounts();
+	buildSheet();   // 反映後の姿を読み直す (psdtext の loadSheet と同じ)
 }
 
 //---------------------------------------------------------------------------
@@ -1459,7 +1664,13 @@ function wire() {
 	$('#shTarget').addEventListener('change', buildSheet);
 	$('#shCopy').addEventListener('click', copySheet);
 	$('#shApply').addEventListener('click', applySheet);
-
+	// コピペ対象カラムのプリセット
+	for (const btn of document.querySelectorAll('[data-cols]')) {
+		btn.addEventListener('click', () => {
+			sheetColSel = new Set(SHEET_PRESETS[btn.dataset.cols] || SHEET_COLS);
+			renderSheet();
+		});
+	}
 
 	document.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 'd') {          // 自己診断行の表示切り替え

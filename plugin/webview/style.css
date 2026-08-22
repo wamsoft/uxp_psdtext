@@ -184,14 +184,51 @@ table.sheet th {
 }
 table.sheet tr.hit td { background: var(--hit); }
 
-.c-sh-name { width: 30%; max-width: 200px; }
-.c-sh-name input {
+/* カラム幅。本文が主役でそれ以外は控えめに */
+.c-sh-name  { width: 16%; min-width: 90px; }
+.c-sh-text  { width: auto; }
+.c-sh-font  { width: 14%; min-width: 90px; white-space: nowrap; }
+.c-sh-size  { width: 52px; }
+.c-sh-color { width: 96px; white-space: nowrap; }
+.c-sh-align { width: 64px; }
+
+table.sheet input, table.sheet select {
 	width: 100%;
 	background: transparent; border-color: transparent;
 	padding: 1px 4px;
 }
-.c-sh-name input:hover { border-color: var(--border); }
-.c-sh-name input:focus { background: var(--bg3); border-color: var(--accent); }
+table.sheet input:hover, table.sheet select:hover { border-color: var(--border); }
+table.sheet input:focus, table.sheet select:focus {
+	background: var(--bg3); border-color: var(--accent);
+}
+.c-sh-font input { width: calc(100% - 22px); }
+.c-sh-color input[type=text] { width: 62px; }
+.c-sh-color input.swatch {
+	width: 24px; height: 20px; padding: 0 1px; vertical-align: middle;
+}
+table.sheet td.edited { background: var(--hit); }
+table.sheet td.off { background: var(--bg); }
+table.sheet th label {
+	display: inline-flex; align-items: center; gap: 3px;
+	cursor: pointer; white-space: nowrap;
+}
+table.sheet th { opacity: .55; }
+table.sheet th.on { opacity: 1; }
+.cell-btn { padding: 0 3px; vertical-align: middle; }
+
+/* フォントセルの候補メニュー */
+.cell-menu {
+	position: fixed; z-index: 50;
+	max-height: 240px; overflow: auto; min-width: 200px;
+	background: var(--bg2); border: 1px solid var(--border); border-radius: 3px;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+}
+.cell-menu-row {
+	display: flex; justify-content: space-between; gap: 10px;
+	padding: 3px 8px; cursor: pointer; white-space: nowrap;
+}
+.cell-menu-row:hover, .cell-menu-row.on { background: var(--hit); }
+.cell-menu-row.more { color: var(--accent-hi); border-top: 1px solid var(--border); }
 .c-sh-text textarea {
 	width: 100%; min-height: 1.8em; resize: none;
 	background: transparent; border-color: transparent;
