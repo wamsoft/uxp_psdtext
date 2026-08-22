@@ -391,6 +391,7 @@ function renderRichEditor(model) {
 	// 基準サイズが約 14px で見えるように全体を縮尺 (PSD の pt は巨大なことがある)
 	const bsize = (m.ranges[0] && m.ranges[0].size) || 24;
 	const scale = Math.max(0.15, Math.min(2, 14 / bsize));
+	const b = editBase();
 	for (const r of m.ranges) {
 		const st = baseStyle(r);
 		const span = document.createElement('span');
@@ -403,8 +404,17 @@ function renderRichEditor(model) {
 		span.style.fontWeight = st.bold ? '700' : '400';
 		span.style.fontStyle = st.italic ? 'italic' : 'normal';
 		span.style.textDecoration = st.underline ? 'underline' : 'none';
+		if (!eqStyle(st, b)) span.classList.add('mark');   // 基準と違う所は薄く目印
 		host.appendChild(span);
 	}
+	syncEditorAlign();
+}
+
+/// レイヤの揃えをエディタの表示にも反映する (段落ごとの違いは表示しない)
+function syncEditorAlign() {
+	const v = $('#editAlign').value ||
+		(editTarget && editTarget.origStyle.align) || 'left';
+	$('#editRich').style.textAlign = v;
 }
 
 function serializeRichEditor() {
@@ -479,10 +489,25 @@ function setSelOffsets(s, e) {
 	sel.addRange(r);
 }
 
-/// 選択範囲 [s,e) へ書式を直接適用する (範囲を割ってスタイルを上書き)
+/// 書式操作の対象範囲。選択があればそれ。空選択でも、基準と違う書式の
+/// ラン (目印付きの部分) の中なら、そのラン全体を対象にする。
+/// 基準のままの本文では誤爆しないよう選択を要求する。
+function selTargetRange() {
+	const off = selOffsets();
+	if (!off) return null;
+	if (off.s < off.e) return off;
+	const model = serializeRichEditor();
+	const b = editBase();
+	const r = model.ranges.find(x => off.s >= x.from && off.s < x.to) ||
+	          model.ranges.find(x => x.to === off.s && x.from < x.to);
+	if (r && !eqStyle(baseStyle(r), b)) return { s: r.from, e: r.to };
+	return off;
+}
+
+/// 対象範囲 [s,e) へ書式を直接適用する (範囲を割ってスタイルを上書き)
 function applyStyleToSel(changes) {
 	if (!editTarget) return;
-	const off = selOffsets();
+	const off = selTargetRange();
 	if (!off || off.s >= off.e) {
 		setStatus('#editStatus', tr('fmt.needSel'), 'error');
 		return;
@@ -503,14 +528,37 @@ function applyStyleToSel(changes) {
 	setStatus('#editStatus', '');
 }
 
-/// 選択開始位置に効いているスタイル (トグル判定用)
+/// 選択開始位置に効いているスタイル (トグル判定・インスペクタ表示用)
 function styleAtSel() {
 	const off = selOffsets();
 	const model = serializeRichEditor();
 	const pos = off ? off.s : 0;
 	const r = model.ranges.find(x => pos >= x.from && pos < x.to) ||
+	          model.ranges.find(x => x.to === pos && x.from < x.to) ||
 	          model.ranges[model.ranges.length - 1];
 	return r ? baseStyle(r) : editBase();
+}
+
+//--- ツールバー = カーソル位置のインスペクタ --------------------------------
+
+let selSyncTimer = null;
+
+/// カーソル位置の書式をツールバーへ反映する (B/I/U の点灯、サイズ・色、
+/// フォント名の読み出し表示)
+function syncFmtBar() {
+	if (!editTarget || $('#editDialog').hidden) return;
+	const host = $('#editRich');
+	const sel = window.getSelection();
+	if (!sel.rangeCount || !host.contains(sel.getRangeAt(0).startContainer)) return;
+	const st = styleAtSel();
+	$('#fmtB').classList.toggle('on', st.bold);
+	$('#fmtI').classList.toggle('on', st.italic);
+	$('#fmtU').classList.toggle('on', st.underline);
+	if (document.activeElement !== $('#fmtSize')) $('#fmtSize').value = st.size || '';
+	if (/^#[0-9a-fA-F]{6}$/.test(st.color || '')) $('#fmtColor').value = st.color.toLowerCase();
+	const f = fontsCache.find(x => x.ps === st.font);
+	$('#fmtInfo').textContent = (f ? fontLabel(f) : (st.font || '')) +
+		' · ' + st.size + 'pt' + (eqStyle(st, editBase()) ? '' : ' ●');
 }
 
 function toggleFlagSel(attr) {
@@ -1408,6 +1456,15 @@ function wire() {
 		const t = (e.clipboardData || window.clipboardData).getData('text');
 		if (t) document.execCommand('insertText', false, t.replace(/\r\n?/g, '\n'));
 	});
+
+	// カーソル移動でツールバーへ書式を反映
+	document.addEventListener('selectionchange', () => {
+		if (selSyncTimer) clearTimeout(selSyncTimer);
+		selSyncTimer = setTimeout(syncFmtBar, 80);
+	});
+
+	// 揃えの変更はエディタの表示にも即反映
+	$('#editAlign').addEventListener('change', syncEditorAlign);
 	attachFontCombo($('#stFont'), () => {
 		$('#stUseFont').checked = true;   // フォントを選んだ＝適用したいはず
 		updateStyleCounts();

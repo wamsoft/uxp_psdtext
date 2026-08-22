@@ -83,6 +83,13 @@ textarea { resize: vertical; width: 100%; }
 	line-height: 1.5;
 }
 .rich-edit:focus { outline: 1px solid var(--accent); }
+/* 基準と違う書式のラン (部分書式) の目印 */
+.rich-edit span.mark { background: rgba(58, 121, 196, .14); border-radius: 2px; }
+
+/* ツールバーの点灯状態 (カーソル位置の書式) */
+.fmt-bar button.on {
+	background: var(--accent); border-color: var(--accent); color: #fff;
+}
 
 /*-- レイヤツリー ----------------------------------------------------------*/
 
