@@ -336,19 +336,41 @@ function clickLayer(id, e) {
 // 単体編集 (ダブルクリック / F2)
 //---------------------------------------------------------------------------
 
-let editTarget = null;   ///< {id, orig, origName} 編集中のレイヤ
+let editTarget = null;   ///< {id, orig, origName, origStyle} 編集中のレイヤ
+const editTouched = { font: false, size: false, color: false, align: false };
 
 function openEditDialog(id) {
 	const row = state.byId.get(id);
 	if (!row || !row.text) return;
-	editTarget = { id, orig: row.body || '', origName: row.name };
+	editTarget = { id, orig: row.body || '', origName: row.name, origStyle: {} };
+	for (const k of Object.keys(editTouched)) editTouched[k] = false;
 	$('#editTitle').textContent = row.name;
 	$('#editPath').textContent = row.path;
 	$('#editName').value = row.name;
 	$('#editText').value = editTarget.orig;
+	$('#editFont').value = '';
+	$('#editSize').value = '';
+	$('#editColor').value = '#ffffff';
+	$('#editAlign').value = '';
 	setStatus('#editStatus', '');
 	$('#editDialog').hidden = false;
 	$('#editText').focus();
+	ensureFonts();
+	loadEditStyle(id);
+}
+
+/// いまの初期書式を読んで欄に反映する (開いた直後は空のまま編集できる)
+async function loadEditStyle(id) {
+	try {
+		const res = await request('getStyle', { id });
+		if (!editTarget || editTarget.id !== id) return;   // もう別のレイヤを開いた
+		const st = res.style || {};
+		editTarget.origStyle = st;
+		if (!editTouched.font && st.font) $('#editFont').value = st.font;
+		if (!editTouched.size && typeof st.size === 'number') $('#editSize').value = st.size;
+		if (!editTouched.color && st.color) $('#editColor').value = st.color;
+		if (!editTouched.align && st.align) $('#editAlign').value = st.align;
+	} catch (e) { /* 書式欄が空のままなだけ */ }
 }
 
 function closeEditDialog() {
@@ -372,6 +394,21 @@ function refreshEditFromTree() {
 	$('#editTitle').textContent = fresh.name;
 }
 
+/// ユーザーが触った書式欄のうち、読み込んだ値から変わったものだけ集める
+function editStyleDiff() {
+	const st = editTarget.origStyle || {};
+	const out = {};
+	const font = $('#editFont').value.trim();
+	if (editTouched.font && font && font !== st.font) out.font = font;
+	const size = parseFloat($('#editSize').value);
+	if (editTouched.size && size > 0 && size !== st.size) out.size = size;
+	const color = $('#editColor').value;
+	if (editTouched.color && color !== st.color) out.color = color;
+	const align = $('#editAlign').value;
+	if (align && align !== st.align) out.align = align;
+	return Object.keys(out).length ? out : null;
+}
+
 async function applyEdit() {
 	if (!editTarget) return;
 	const text = $('#editText').value;
@@ -379,7 +416,9 @@ async function applyEdit() {
 	const item = { id: editTarget.id };
 	if (text !== editTarget.orig) item.text = text;
 	if (name.trim() && name !== editTarget.origName) item.name = name;
-	if (item.text === undefined && item.name === undefined) {
+	const style = editStyleDiff();
+	if (style) item.style = style;
+	if (item.text === undefined && item.name === undefined && !item.style) {
 		setStatus('#editStatus', tr('edit.done'), 'ok');   // 変更なし
 		return;
 	}
@@ -390,6 +429,10 @@ async function applyEdit() {
 		if ((res.errors || []).length) throw new Error(res.errors[0].message);
 		if (item.text !== undefined) editTarget.orig = text;
 		if (item.name !== undefined) editTarget.origName = name;
+		if (item.style) {
+			Object.assign(editTarget.origStyle, item.style);
+			for (const k of Object.keys(editTouched)) editTouched[k] = false;
+		}
 		setStatus('#editStatus', tr('edit.done'), 'ok');
 	} catch (e) {
 		setStatus('#editStatus', String(e.message || e), 'error');
@@ -743,7 +786,9 @@ async function applyStyleDialog() {
 	setStatus('#stStatus', tr('style.working'));
 	$('#stApply').disabled = true;
 	try {
-		const res = await request('applyStyle', { ids: targets.map(r => r.id), style });
+		const res = await request('applyTexts', {
+			items: targets.map(r => ({ id: r.id, style })),
+		});
 		const failed = (res.errors || []).length;
 		setStatus('#stStatus', failed ? tr('style.doneFailed', res.applied || 0, failed)
 		                              : tr('style.done', res.applied || 0),
@@ -816,6 +861,12 @@ function wire() {
 	}
 
 	$('#editApply').addEventListener('click', applyEdit);
+	// 書式欄は「触った項目だけ」を適用対象にするため、入力を記録する
+	for (const [id, key] of [['#editFont', 'font'], ['#editSize', 'size'],
+	                         ['#editColor', 'color'], ['#editAlign', 'align']]) {
+		$(id).addEventListener('input', () => { editTouched[key] = true; });
+		$(id).addEventListener('change', () => { editTouched[key] = true; });
+	}
 
 	$('#shTarget').addEventListener('change', buildSheet);
 	$('#shCopy').addEventListener('click', copySheet);

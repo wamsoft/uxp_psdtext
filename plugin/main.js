@@ -91,12 +91,6 @@ async function handleMessage(msg) {
 	case "getStyle":
 		send({ type: "style", reqId: msg.reqId, ...readStyle(msg.id) });
 		break;
-	case "applyStyle": {
-		const result = await applyStyle(msg.ids || [], msg.style || {});
-		send({ type: "styleResult", reqId: msg.reqId, ...result });
-		sendTree();
-		break;
-	}
 	default:
 		break;
 	}
@@ -187,8 +181,23 @@ function findLayerById(layers, id) {
 	return null;
 }
 
-/// items: [{id, text?, name?}] をまとめて反映し、履歴は 1 段にまとめる。
-/// text はテキストレイヤの本文、name はレイヤ名 (種別問わず)。
+/// レイヤ全体の初期書式を適用する。style の指定されたフィールドだけ触る
+function applyStyleTo(l, style) {
+	if (!l.textItem) throw new Error("not a text layer: " + l.id);
+	const cs = l.textItem.characterStyle;
+	if (typeof style.font === "string" && style.font) cs.font = style.font;
+	if (typeof style.size === "number" && style.size > 0) cs.size = style.size;
+	if (typeof style.color === "string" && /^#[0-9a-fA-F]{6}$/.test(style.color)) {
+		cs.color = makeSolidColor(style.color);
+	}
+	if (style.align === "left" || style.align === "center" || style.align === "right") {
+		l.textItem.paragraphStyle.justification = justificationOf(style.align);
+	}
+}
+
+/// items: [{id, text?, name?, style?}] をまとめて反映し、履歴は 1 段にまとめる。
+/// text はテキストレイヤの本文、name はレイヤ名 (種別問わず)、
+/// style はレイヤ全体の初期書式 {font?, size?, color?, align?}。
 /// batchPlay で textKey を直接 set すると文字単位の書式が壊れることが
 /// あるので、DOM API (textItem.contents) を使う。
 async function applyTexts(items) {
@@ -215,6 +224,9 @@ async function applyTexts(items) {
 						if (typeof it.text === "string") {
 							if (!l.textItem) throw new Error("not a text layer: " + it.id);
 							l.textItem.contents = it.text.replace(/\n/g, "\r");
+						}
+						if (it.style && typeof it.style === "object") {
+							applyStyleTo(l, it.style);
 						}
 						applied++;
 					} catch (e) {
@@ -296,50 +308,6 @@ function makeSolidColor(hex) {
 function justificationOf(align) {
 	const J = require("photoshop").constants.Justification;
 	return align === "left" ? J.LEFT : align === "center" ? J.CENTER : J.RIGHT;
-}
-
-/// ids のテキストレイヤへ、style の指定されたフィールドだけをまとめて適用。
-/// 履歴 1 段。style: {font?, size?, color? (#rrggbb), align? (left|center|right)}
-async function applyStyle(ids, style) {
-	const doc = app.activeDocument;
-	if (!doc) return { applied: 0, errors: [{ message: "no document" }] };
-
-	let applied = 0;
-	const errors = [];
-	applying = true;
-	try {
-		await core.executeAsModal(async (ctx) => {
-			const hist = await ctx.hostControl.suspendHistory({
-				documentID: doc.id,
-				name: "Edit Text Style",
-			});
-			try {
-				for (const id of ids) {
-					try {
-						const l = findLayerById(doc.layers, id);
-						if (!l || !l.textItem) throw new Error("text layer not found: " + id);
-						const cs = l.textItem.characterStyle;
-						if (typeof style.font === "string" && style.font) cs.font = style.font;
-						if (typeof style.size === "number" && style.size > 0) cs.size = style.size;
-						if (typeof style.color === "string" && /^#[0-9a-fA-F]{6}$/.test(style.color)) {
-							cs.color = makeSolidColor(style.color);
-						}
-						if (style.align === "left" || style.align === "center" || style.align === "right") {
-							l.textItem.paragraphStyle.justification = justificationOf(style.align);
-						}
-						applied++;
-					} catch (e) {
-						errors.push({ id, message: String(e && e.message || e) });
-					}
-				}
-			} finally {
-				await ctx.hostControl.resumeHistory(hist);
-			}
-		}, { commandName: "Edit Text Style" });
-	} finally {
-		applying = false;
-	}
-	return { applied, errors };
 }
 
 //---------------------------------------------------------------------------

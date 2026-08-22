@@ -56,6 +56,25 @@
 			<label class="row"><span data-i18n="edit.name">Name</span>
 				<input type="text" id="editName" style="flex:1" spellcheck="false"></label>
 			<textarea id="editText" rows="8" spellcheck="false"></textarea>
+			<div class="st-fields">
+				<div class="row" style="flex-wrap:nowrap">
+					<span class="st-name" data-i18n="style.font">Font</span>
+					<input type="text" id="editFont" list="fontList" style="flex:1" spellcheck="false">
+				</div>
+				<div class="row">
+					<label><span data-i18n="style.size">Size</span>
+						<input type="number" id="editSize" class="num" min="0.1" step="0.5"> pt</label>
+					<label><span data-i18n="style.color">Color</span>
+						<input type="color" id="editColor" value="#ffffff"></label>
+					<label><span data-i18n="style.align">Alignment</span>
+						<select id="editAlign">
+							<option value="" data-i18n="style.align.keep">(keep)</option>
+							<option value="left" data-i18n="style.align.left">Left</option>
+							<option value="center" data-i18n="style.align.center">Center</option>
+							<option value="right" data-i18n="style.align.right">Right</option>
+						</select></label>
+				</div>
+			</div>
 			<div class="row" style="margin-top:8px; align-items:center">
 				<button id="editApply" class="primary" data-i18n="edit.apply">Apply</button>
 				<span id="editStatus" class="status"></span>
@@ -158,7 +177,8 @@
 				<ul>
 					<li>既定ではテキストレイヤだけが並ぶ (「テキスト」フィルタを外すと全レイヤ)</li>
 					<li>クリックで選択 / <b>Ctrl+クリック</b>で追加・解除 / <b>Shift+クリック</b>で範囲選択</li>
-					<li>テキストレイヤを<b>ダブルクリック</b> または <b>F2</b> で単体編集</li>
+					<li>テキストレイヤを<b>ダブルクリック</b> または <b>F2</b> で単体編集
+						(名前・本文・初期書式をまとめて 1 画面で。適用は履歴 1 段)</li>
 					<li>検索欄はレイヤのパスと本文の部分一致</li>
 					<li><b>テキスト全選択</b>: 表示中のテキストレイヤを全部選択</li>
 				</ul>
@@ -191,7 +211,8 @@
 				<ul>
 					<li>By default only text layers are listed (uncheck "Text" to see everything)</li>
 					<li>Click to select / <b>Ctrl+click</b> to add or remove / <b>Shift+click</b> for a range</li>
-					<li><b>Double-click</b> a text layer (or press <b>F2</b>) to edit it on its own</li>
+					<li><b>Double-click</b> a text layer (or press <b>F2</b>) to edit it on its own
+						(name, contents and base style together in one view; one history step)</li>
 					<li>The search box matches layer paths and text contents</li>
 					<li><b>Select all text</b>: selects every listed text layer</li>
 				</ul>
