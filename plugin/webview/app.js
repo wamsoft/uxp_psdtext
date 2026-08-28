@@ -10,6 +10,7 @@
 import { dlog } from './debug.js';
 import { wireModalClose, escapeModal } from './common/modal.js';
 import { createBridge } from './common/bridge.js';
+import { newIid, createDiag } from './common/diag.js';
 import { tr, applyI18n, toggleLang, currentLang, setLang } from './i18n.js';
 import { baseStyle, sameValue, STYLE_ATTRS } from './tags.js';
 import { rangesToTagged, taggedToRich } from './rich.js';
@@ -21,46 +22,8 @@ const $ = (sel) => document.querySelector(sel);
 //---------------------------------------------------------------------------
 
 
-//---------------------------------------------------------------------------
-// 自己診断。fetch もブリッジも使わず画面の #diagLine に内部状態を出し続ける。
-//---------------------------------------------------------------------------
-
-const IID = Math.floor(Math.random() * 36 ** 4).toString(36);  ///< インスタンス識別子
-let lastJsError = '';
-let diagShown = false;      ///< Ctrl+D でトグル
-
-/// 診断行の表示切り替え。Ctrl+D と、パネルのフライアウトメニューの両方から。
-function toggleDiag() {
-	diagShown = !diagShown;
-	updateDiag();
-}
-
-window.addEventListener('error', (e) => {
-	lastJsError = (e.message || '') + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno;
-});
-window.addEventListener('unhandledrejection', (e) => {
-	lastJsError = 'reject: ' + String(e.reason && (e.reason.message || e.reason));
-});
-
-function updateDiag() {
-	const el = document.getElementById('diagLine');
-	if (!el) return;
-	const t = new Date();
-	const clock = t.toTimeString().slice(0, 8) + '.' + Math.floor(t.getMilliseconds() / 100);
-	el.textContent =
-		'[' + IID + '] ' + clock +
-		' conn:' + (state.connected ? 'Y' : 'n') +
-		' rows:' + state.rows.length +
-		' doc:' + (state.doc ? state.doc.name : '-') +
-		' host:' + (!window.uxpHost ? 'none' : window.uxpHost.__mock ? 'mock' : 'ok') +
-		' sent:' + bridge.stats.sendTries +
-		' trees:' + treeLog.join(',') +
-		(bridge.stats.lastSendError ? ' SENDERR:' + bridge.stats.lastSendError : '') +
-		(lastJsError ? ' JSERR:' + lastJsError : '');
-	el.className = (diagShown ? 'show' : '') +
-	               ((lastJsError || bridge.stats.lastSendError) ? ' err' : '');
-}
-setInterval(updateDiag, 500);
+/// この webview インスタンスの識別子 (診断行とパネルへの送信に載る)
+const IID = newIid();
 
 //---------------------------------------------------------------------------
 // パネルとの配線。仕組みは共通モジュール (common/bridge.js)。
@@ -73,7 +36,7 @@ const bridge = createBridge({
 		tree: (msg) => applyTree(msg),
 		log: (msg) => dlog('panel', msg.msg),      // パネル側のログをデバッグサーバへ
 		showHelp: () => openHelp(),                // フライアウトメニューの「ヘルプ」
-		showDiag: () => toggleDiag(),              // 同じく ≡ メニューから
+		showDiag: () => diag.toggle(),             // 同じく ≡ メニューから
 	},
 	isConnected: () => state.connected,
 	onSendError: () => { if (!state.connected) renderAll(); },
@@ -81,6 +44,20 @@ const bridge = createBridge({
 });
 
 const { post, request } = bridge;
+
+//---------------------------------------------------------------------------
+// 自己診断行 (≡ メニュー / Ctrl+D)。仕組みは共通モジュール (common/diag.js)。
+//---------------------------------------------------------------------------
+
+const diag = createDiag({
+	iid: IID,
+	stats: bridge.stats,
+	fields: () =>
+		' conn:' + (state.connected ? 'Y' : 'n') +
+		' rows:' + state.rows.length +
+		' doc:' + (state.doc ? state.doc.name : '-') +
+		' trees:' + treeLog.join(','),
+});
 
 
 //---------------------------------------------------------------------------
@@ -1726,7 +1703,7 @@ function wire() {
 	document.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 'd') {          // 自己診断行の表示切り替え
 			e.preventDefault();
-			toggleDiag();
+			diag.toggle();
 			return;
 		}
 		if (e.key === 'Escape') {
