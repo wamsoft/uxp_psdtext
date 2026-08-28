@@ -8,7 +8,7 @@
 //---------------------------------------------------------------------------
 
 import { dlog } from './debug.js';
-import { tr, applyI18n, toggleLang, currentLang } from './i18n.js';
+import { tr, applyI18n, toggleLang, currentLang, setLang } from './i18n.js';
 import { baseStyle, sameValue, STYLE_ATTRS } from './tags.js';
 import { rangesToTagged, taggedToRich } from './rich.js';
 
@@ -75,10 +75,22 @@ function post(msg) {
 	if (!state.connected) renderAll();
 }
 
+/// パネルが黙ったままだと Promise が永久に残り、ボタンが disabled のまま
+/// 固まってしまう。応答が来なければ必ず reject させる。
+const REQ_TIMEOUT_MS = 20000;
+
 function request(type, payload = {}) {
 	return new Promise((resolve, reject) => {
 		const reqId = ++reqSeq;
-		pending.set(reqId, { resolve, reject });
+		const timer = setTimeout(() => {
+			if (!pending.has(reqId)) return;
+			pending.delete(reqId);
+			reject(new Error(tr('app.timeout', type)));
+		}, REQ_TIMEOUT_MS);
+		pending.set(reqId, {
+			resolve: (m) => { clearTimeout(timer); resolve(m); },
+			reject: (e) => { clearTimeout(timer); reject(e); },
+		});
 		post({ type, reqId, ...payload });
 	});
 }
@@ -127,6 +139,68 @@ const state = {
 	collapsed: new Set(),
 	filter: '',
 };
+
+//---------------------------------------------------------------------------
+// モーダルの開閉
+//
+// 「背景クリックで閉じる」を click の target だけで判定してはいけない。
+// click は mousedown の target と mouseup の target の最近共通祖先で発火する
+// ので、エディタや表の中で選択ドラッグを始めて背景で離しただけで「背景が
+// クリックされた」ことになり、編集中の内容ごと閉じてしまう。
+// 押した位置と離した位置の両方が背景自身のときだけ閉じる。
+//
+// さらに未保存の変更があるときは、背景クリックと Escape では閉じない
+// (× と「適用」は意図的な操作なのでそのまま通す)。
+//---------------------------------------------------------------------------
+
+const modalGuards = new Map();   ///< セレクタ → {close, isDirty, onBlocked}
+
+function wireModalClose(sel, close, isDirty, onBlocked) {
+	const el = $(sel);
+	modalGuards.set(sel, { close, isDirty, onBlocked });
+
+	let downOnBackdrop = false;
+	el.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === el; });
+	el.addEventListener('mouseleave', () => { downOnBackdrop = false; });
+	el.addEventListener('mouseup', (e) => {
+		const onBackdrop = downOnBackdrop && e.target === el;
+		downOnBackdrop = false;
+		if (onBackdrop) requestModalClose(sel);
+	});
+
+	const x = el.querySelector('[data-close]');
+	if (x) x.addEventListener('click', close);
+}
+
+/// 背景クリックと Escape からの「閉じたい」。未保存の変更があるときは閉じない。
+function requestModalClose(sel) {
+	const g = modalGuards.get(sel);
+	if (!g) return;
+	if (g.isDirty && g.isDirty()) { if (g.onBlocked) g.onBlocked(); return; }
+	g.close();
+}
+
+/// いま開いているいちばん手前のモーダルを閉じる (Escape 用)。
+/// 引数は手前に出ているものから順に並べる。
+function escapeModal(order) {
+	for (const sel of order) {
+		if (!$(sel).hidden) { requestModalClose(sel); return true; }
+	}
+	return false;
+}
+
+/// 単体編集に未保存の変更があるか
+function editDirty() {
+	if (!editTarget) return false;
+	if (editTouched) return true;
+	try { return modelJson(activeModel()) !== editTarget.origJson; }
+	catch (e) { return false; }
+}
+
+/// 表に未保存の変更があるか
+function sheetDirty() {
+	return sheetRows.some(sheetRowChanged);
+}
 
 const treeLog = [];   ///< 診断用: 受信したツリーの履歴 (D86 = doc有り86行, -0 = doc無し)
 
@@ -1509,8 +1583,19 @@ function fontByPs(ps) {
 async function loadPrefs() {
 	try {
 		const res = await request('getPrefs');
-		favFonts = new Set((res.prefs || {}).favFonts || []);
+		const prefs = res.prefs || {};
+		favFonts = new Set(prefs.favFonts || []);
+		// webview では localStorage が使えないので、言語もここから戻す
+		if (setLang(prefs.lang)) {
+			$('#langBtn').textContent = tr('app.lang');
+			renderAll();
+			if (!$('#helpDialog').hidden) syncHelpLang();
+		}
 	} catch (e) { /* 無ければ空のまま */ }
+}
+
+function saveLangPref() {
+	request('setPrefs', { prefs: { lang: currentLang() } }).catch(() => {});
 }
 
 function saveFavFonts() {
@@ -1655,6 +1740,7 @@ function wire() {
 	});
 	$('#langBtn').addEventListener('click', () => {
 		toggleLang();
+		saveLangPref();
 		$('#langBtn').textContent = tr('app.lang');
 		renderAll();
 		if (!$('#sheetDialog').hidden) { renderSheet(); }
@@ -1672,17 +1758,13 @@ function wire() {
 	});
 
 	// 各モーダルの × とオーバーレイクリック
-	for (const [dlg, close] of [
-		['#editDialog', closeEditDialog],
-		['#sheetDialog', closeSheetDialog],
-		['#fontMgrDialog', closeFontMgr],
-		['#helpDialog', closeHelp],
-	]) {
-		$(dlg).querySelector('[data-close]').addEventListener('click', close);
-		$(dlg).addEventListener('click', (e) => {
-			if (e.target === $(dlg)) close();
-		});
-	}
+	// 編集中の 2 つは未保存ガードつき。残りは失うものが無いのでそのまま閉じる
+	wireModalClose('#editDialog', closeEditDialog, editDirty,
+	               () => setStatus('#editStatus', tr('modal.dirty'), 'error'));
+	wireModalClose('#sheetDialog', closeSheetDialog, sheetDirty,
+	               () => setStatus('#shStatus', tr('modal.dirty'), 'error'));
+	wireModalClose('#fontMgrDialog', closeFontMgr);
+	wireModalClose('#helpDialog', closeHelp);
 
 	$('#editApply').addEventListener('click', applyEdit);
 	// 書式欄は「触った項目だけ」を適用対象にするため、入力を記録する
@@ -1738,10 +1820,7 @@ function wire() {
 			return;
 		}
 		if (e.key === 'Escape') {
-			if (!$('#helpDialog').hidden) closeHelp();
-			else if (!$('#fontMgrDialog').hidden) closeFontMgr();
-			else if (!$('#sheetDialog').hidden) closeSheetDialog();
-			else if (!$('#editDialog').hidden) closeEditDialog();
+			escapeModal(['#helpDialog', '#fontMgrDialog', '#sheetDialog', '#editDialog']);
 			return;
 		}
 		if (e.key === 'F2' && state.selected !== null &&

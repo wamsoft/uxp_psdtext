@@ -13,6 +13,8 @@ const DICT = {
 		'app.refresh.title': 'Photoshop からレイヤ一覧を取り直す',
 		'app.layers':      '{0} レイヤ (テキスト {1})',
 		'app.lang':        'EN',
+		'modal.dirty':     '変更があります。「適用」か × で閉じてください',
+		'app.timeout':     'パネルから応答がありません ({0})',
 		'app.help.title':  '使い方を表示',
 		'help.title':      'PSD Text Edit の使い方',
 
@@ -123,6 +125,8 @@ const DICT = {
 		'app.refresh.title': 'Fetch the layer list from Photoshop again',
 		'app.layers':      '{0} layer(s), {1} text',
 		'app.lang':        'JA',
+		'modal.dirty':     'Unsaved changes — close with Apply or ×',
+		'app.timeout':     'No response from the panel ({0})',
 		'app.help.title':  'Show the guide',
 		'help.title':      'PSD Text Edit Guide',
 
@@ -244,6 +248,17 @@ export function currentLang() {
 	const saved = safeGet(LANG_KEY);
 	lang = (saved === 'ja' || saved === 'en') ? saved : 'en';   // 既定は英語
 	return lang;
+}
+
+/// パネル側 prefs から復元するときなど、外から言語を決める。
+/// 実際に変わったときだけ true を返す。
+export function setLang(l) {
+	if (l !== 'ja' && l !== 'en') return false;
+	if (currentLang() === l) return false;
+	lang = l;
+	safeSet(LANG_KEY, lang);
+	applyI18n();
+	return true;
 }
 
 export function toggleLang() {
