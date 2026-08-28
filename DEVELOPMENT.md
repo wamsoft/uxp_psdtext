@@ -6,6 +6,21 @@ entirely in a webview (real Chromium / Edge WebView2) and the UXP panel
 script is only a bridge to Photoshop. See that repository's DEVELOPMENT.md
 for the full field notes; the highlights and the differences are below.
 
+## Shared modules (submodule)
+
+`plugin/webview/common/` is the shared webview runtime
+([uxp_common](https://github.com/wamsoft/uxp_common)), used by all three
+sibling panels. Clone with submodules, or fetch them afterwards:
+
+```
+git clone --recurse-submodules <this repo>
+git submodule update --init          # for an existing clone
+```
+
+Without it the panel loads nothing — `app.js` imports from `common/`.
+To pick up a change made there: `git submodule update --remote`, then commit
+the new pointer.
+
 ## Loading from source (UDT)
 
 1. Install the [UXP Developer Tool](https://developer.adobe.com/photoshop/uxp/2022/guides/devtool/installation/)

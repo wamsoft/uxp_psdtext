@@ -1,0 +1,3 @@
+[submodule "plugin/webview/common"]
+	path = plugin/webview/common
+	url = https://github.com/wamsoft/uxp_common.git

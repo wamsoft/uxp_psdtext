@@ -31,6 +31,8 @@ const NOOP_DEBUG = [
 function collect(dir, rel = '') {
 	const out = [];
 	for (const name of fs.readdirSync(dir)) {
+		// submodule が置く .git などは同梱しない
+		if (name.startsWith('.')) continue;
 		const abs = path.join(dir, name);
 		const r = rel ? rel + '/' + name : name;
 		if (fs.statSync(abs).isDirectory()) out.push(...collect(abs, r));
