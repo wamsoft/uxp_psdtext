@@ -9,6 +9,7 @@
 
 import { dlog } from './debug.js';
 import { wireModalClose, escapeModal } from './common/modal.js';
+import { createBridge } from './common/bridge.js';
 import { tr, applyI18n, toggleLang, currentLang, setLang } from './i18n.js';
 import { baseStyle, sameValue, STYLE_ATTRS } from './tags.js';
 import { rangesToTagged, taggedToRich } from './rich.js';
@@ -19,10 +20,6 @@ const $ = (sel) => document.querySelector(sel);
 // UXP パネルとの通信 (postMessage ブリッジ)
 //---------------------------------------------------------------------------
 
-const pending = new Map();
-let reqSeq = 0;
-let sendTries = 0;          ///< 診断用: 送信を試みた回数
-let lastSendError = '';     ///< 診断用: 最後に出た送信例外
 
 //---------------------------------------------------------------------------
 // 自己診断。fetch もブリッジも使わず画面の #diagLine に内部状態を出し続ける。
@@ -50,80 +47,34 @@ function updateDiag() {
 		' rows:' + state.rows.length +
 		' doc:' + (state.doc ? state.doc.name : '-') +
 		' host:' + (!window.uxpHost ? 'none' : window.uxpHost.__mock ? 'mock' : 'ok') +
-		' sent:' + sendTries +
+		' sent:' + bridge.stats.sendTries +
 		' trees:' + treeLog.join(',') +
-		(lastSendError ? ' SENDERR:' + lastSendError : '') +
+		(bridge.stats.lastSendError ? ' SENDERR:' + bridge.stats.lastSendError : '') +
 		(lastJsError ? ' JSERR:' + lastJsError : '');
 	el.className = (diagShown ? 'show' : '') +
-	               ((lastJsError || lastSendError) ? ' err' : '');
+	               ((lastJsError || bridge.stats.lastSendError) ? ' err' : '');
 }
 setInterval(updateDiag, 500);
 
-/// uxpHost.postMessage は環境によって受け付ける形が違うことがあるので、
-/// 文字列 1 引数 → 文字列 + targetOrigin → 素のオブジェクト の順に試す。
-function post(msg) {
-	sendTries++;
-	const s = JSON.stringify({ ...msg, iid: IID });
-	const attempts = [
-		() => window.uxpHost.postMessage(s),
-		() => window.uxpHost.postMessage(s, '*'),
-		() => window.uxpHost.postMessage(msg),
-	];
-	for (const f of attempts) {
-		try { f(); return; } catch (e) { lastSendError = String(e && e.message || e); }
-	}
-	console.error('postMessage failed:', lastSendError);
-	if (!state.connected) renderAll();
-}
+//---------------------------------------------------------------------------
+// パネルとの配線。仕組みは共通モジュール (common/bridge.js)。
+//---------------------------------------------------------------------------
 
-/// パネルが黙ったままだと Promise が永久に残り、ボタンが disabled のまま
-/// 固まってしまう。応答が来なければ必ず reject させる。
-const REQ_TIMEOUT_MS = 20000;
+const bridge = createBridge({
+	iid: IID,
+	timeoutMessage: (type) => tr('app.timeout', type),
+	handlers: {
+		tree: (msg) => applyTree(msg),
+		log: (msg) => dlog('panel', msg.msg),      // パネル側のログをデバッグサーバへ
+		showHelp: () => openHelp(),                // フライアウトメニューの「ヘルプ」
+	},
+	isConnected: () => state.connected,
+	onSendError: () => { if (!state.connected) renderAll(); },
+	onGiveUp: () => { bridgeFailed = true; renderAll(); },
+});
 
-function request(type, payload = {}) {
-	return new Promise((resolve, reject) => {
-		const reqId = ++reqSeq;
-		const timer = setTimeout(() => {
-			if (!pending.has(reqId)) return;
-			pending.delete(reqId);
-			reject(new Error(tr('app.timeout', type)));
-		}, REQ_TIMEOUT_MS);
-		pending.set(reqId, {
-			resolve: (m) => { clearTimeout(timer); resolve(m); },
-			reject: (e) => { clearTimeout(timer); reject(e); },
-		});
-		post({ type, reqId, ...payload });
-	});
-}
+const { post, request } = bridge;
 
-function onMessage(msg) {
-	if (typeof msg === 'string') {
-		try { msg = JSON.parse(msg); } catch (e) { return; }
-	}
-	if (!msg || !msg.type) return;
-
-	if (msg.type === 'log') {           // パネル側のログをデバッグサーバへ中継
-		dlog('panel', msg.msg);
-		return;
-	}
-
-	if (msg.type === 'showHelp') {      // フライアウトメニューの「ヘルプ」
-		openHelp();
-		return;
-	}
-
-	if (msg.reqId && pending.has(msg.reqId)) {
-		const p = pending.get(msg.reqId);
-		pending.delete(msg.reqId);
-		if (msg.type === 'error') p.reject(new Error(msg.message || 'error'));
-		else p.resolve(msg);
-		if (msg.type !== 'tree') return;   // tree は下の共通処理にも流す
-	}
-
-	if (msg.type === 'tree') applyTree(msg);
-}
-
-window.addEventListener('message', (ev) => onMessage(ev.data));
 
 //---------------------------------------------------------------------------
 // 状態
@@ -253,8 +204,8 @@ function renderAll() {
 	                                             : tr('app.connecting');
 	const diag = state.connected ? '' :
 		'uxpHost: ' + (!window.uxpHost ? 'none' : window.uxpHost.__mock ? 'mock' : 'ok') +
-		' / sent: ' + sendTries +
-		(lastSendError ? ' / error: ' + lastSendError : '');
+		' / sent: ' + bridge.stats.sendTries +
+		(bridge.stats.lastSendError ? ' / error: ' + bridge.stats.lastSendError : '');
 	$('#noDocDetail').textContent = state.lastError || diag;
 	$('#sheetBtn').disabled = !state.doc;
 	$('#selTextsBtn').disabled = !state.doc;
@@ -1688,7 +1639,7 @@ function wire() {
 		$(id).addEventListener('change', renderTree);
 
 	$('#refreshBtn').addEventListener('click', () => {
-		if (!state.connected) { bridgeFailed = false; renderAll(); connect(); }
+		if (!state.connected) { bridgeFailed = false; renderAll(); bridge.connect(); }
 		else request('getTree');
 	});
 	$('#langBtn').addEventListener('click', () => {
@@ -1863,22 +1814,7 @@ if (!window.uxpHost) installMock();
 // 接続ハンドシェイク。最初の tree が届くまでリトライし続ける。
 //---------------------------------------------------------------------------
 
-let bridgeFailed = false;
-
-function connect() {
-	let tries = 0;
-	const timer = setInterval(() => {
-		if (state.connected) { clearInterval(timer); return; }
-		if (++tries > 20) {              // ~15 秒で諦める
-			clearInterval(timer);
-			bridgeFailed = true;
-			renderAll();
-			return;
-		}
-		try { post({ type: 'ready' }); } catch (e) { /* 次のリトライへ */ }
-	}, 700);
-	try { post({ type: 'ready' }); } catch (e) { /* リトライに任せる */ }
-}
+let bridgeFailed = false;   ///< ready のリトライを打ち切った
 
 // リモート eval からモジュール内部に触れるように出しておく (開発用)
 window.__dbg = {
@@ -1891,4 +1827,4 @@ applyI18n();
 $('#langBtn').textContent = tr('app.lang');
 wire();
 renderAll();
-connect();
+bridge.connect();
