@@ -29,6 +29,12 @@ const IID = Math.floor(Math.random() * 36 ** 4).toString(36);  ///< インスタ
 let lastJsError = '';
 let diagShown = false;      ///< Ctrl+D でトグル
 
+/// 診断行の表示切り替え。Ctrl+D と、パネルのフライアウトメニューの両方から。
+function toggleDiag() {
+	diagShown = !diagShown;
+	updateDiag();
+}
+
 window.addEventListener('error', (e) => {
 	lastJsError = (e.message || '') + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno;
 });
@@ -67,6 +73,7 @@ const bridge = createBridge({
 		tree: (msg) => applyTree(msg),
 		log: (msg) => dlog('panel', msg.msg),      // パネル側のログをデバッグサーバへ
 		showHelp: () => openHelp(),                // フライアウトメニューの「ヘルプ」
+		showDiag: () => toggleDiag(),              // 同じく ≡ メニューから
 	},
 	isConnected: () => state.connected,
 	onSendError: () => { if (!state.connected) renderAll(); },
@@ -1719,8 +1726,7 @@ function wire() {
 	document.addEventListener('keydown', (e) => {
 		if (e.ctrlKey && e.key === 'd') {          // 自己診断行の表示切り替え
 			e.preventDefault();
-			diagShown = !diagShown;
-			updateDiag();
+			toggleDiag();
 			return;
 		}
 		if (e.key === 'Escape') {

@@ -746,9 +746,13 @@ try {
 				show() { /* パネルは index.html の読み込みで動いている */ },
 				menuItems: [
 					{ id: "help", label: "ヘルプ / Help" },
+					{ id: "diag", label: "自己診断行 / Diagnostics" },
 				],
 				invokeMenu(id) {
+					// Ctrl+D はキーボードイベントなので Windows の webview
+					// フォーカス不具合で届かないことがある。ここからなら確実。
 					if (id === "help") send({ type: "showHelp" });
+					else if (id === "diag") send({ type: "showDiag" });
 				},
 			},
 		},
