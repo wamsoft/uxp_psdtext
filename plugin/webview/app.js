@@ -8,6 +8,7 @@
 //---------------------------------------------------------------------------
 
 import { dlog } from './debug.js';
+import { wireModalClose, escapeModal } from './common/modal.js';
 import { tr, applyI18n, toggleLang, currentLang, setLang } from './i18n.js';
 import { baseStyle, sameValue, STYLE_ATTRS } from './tags.js';
 import { rangesToTagged, taggedToRich } from './rich.js';
@@ -140,54 +141,6 @@ const state = {
 	filter: '',
 };
 
-//---------------------------------------------------------------------------
-// モーダルの開閉
-//
-// 「背景クリックで閉じる」を click の target だけで判定してはいけない。
-// click は mousedown の target と mouseup の target の最近共通祖先で発火する
-// ので、エディタや表の中で選択ドラッグを始めて背景で離しただけで「背景が
-// クリックされた」ことになり、編集中の内容ごと閉じてしまう。
-// 押した位置と離した位置の両方が背景自身のときだけ閉じる。
-//
-// さらに未保存の変更があるときは、背景クリックと Escape では閉じない
-// (× と「適用」は意図的な操作なのでそのまま通す)。
-//---------------------------------------------------------------------------
-
-const modalGuards = new Map();   ///< セレクタ → {close, isDirty, onBlocked}
-
-function wireModalClose(sel, close, isDirty, onBlocked) {
-	const el = $(sel);
-	modalGuards.set(sel, { close, isDirty, onBlocked });
-
-	let downOnBackdrop = false;
-	el.addEventListener('mousedown', (e) => { downOnBackdrop = e.target === el; });
-	el.addEventListener('mouseleave', () => { downOnBackdrop = false; });
-	el.addEventListener('mouseup', (e) => {
-		const onBackdrop = downOnBackdrop && e.target === el;
-		downOnBackdrop = false;
-		if (onBackdrop) requestModalClose(sel);
-	});
-
-	const x = el.querySelector('[data-close]');
-	if (x) x.addEventListener('click', close);
-}
-
-/// 背景クリックと Escape からの「閉じたい」。未保存の変更があるときは閉じない。
-function requestModalClose(sel) {
-	const g = modalGuards.get(sel);
-	if (!g) return;
-	if (g.isDirty && g.isDirty()) { if (g.onBlocked) g.onBlocked(); return; }
-	g.close();
-}
-
-/// いま開いているいちばん手前のモーダルを閉じる (Escape 用)。
-/// 引数は手前に出ているものから順に並べる。
-function escapeModal(order) {
-	for (const sel of order) {
-		if (!$(sel).hidden) { requestModalClose(sel); return true; }
-	}
-	return false;
-}
 
 /// 単体編集に未保存の変更があるか
 function editDirty() {
