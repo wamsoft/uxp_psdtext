@@ -434,29 +434,3 @@ export function snapOutOfTag(tagged, pos, dir) {
 export function markAtCaret(tagged, pos) {
 	return parseMarks(tagged).find(m => pos >= m.start && pos <= m.end) || null;
 }
-
-//---------------------------------------------------------------------------
-/// マークの中身を短い札にする。tr は i18n の引き当て関数。
-/// 色は呼び出し側でスウォッチにするので、値も一緒に返す。
-export function describeMark(specs, tr) {
-	const parts = [];
-	if (specs.reset) parts.push({ text: tr('fmt.chip.reset') });
-	if ('align' in specs) parts.push({ text: tr('fmt.align.' + (specs.align ?? 0)) });
-	if ('font' in specs)
-		parts.push({ text: specs.font === null ? tr('fmt.chip.fontBase') : shortFont(specs.font) });
-	if ('size' in specs)
-		parts.push({ text: specs.size === null ? tr('fmt.chip.sizeBase') : sizeText(specs.size) + 'px' });
-	if ('color' in specs)
-		parts.push(specs.color === null ? { text: tr('fmt.chip.colorBase') }
-		                                : { text: '', color: normColor(specs.color) });
-	for (const [a, on, off] of [['bold', 'B', 'B'], ['italic', 'I', 'I'],
-	                            ['underline', 'U', 'U'], ['strike', 'S', 'S']])
-		if (a in specs) parts.push({ text: (specs[a] ? on : off), strike: !specs[a] });
-	return parts;
-}
-
-/// "NotoSansJP-Bold" は札には長い。末尾のウェイトだけ残して詰める。
-function shortFont(name) {
-	const s = String(name);
-	return s.length <= 16 ? s : s.slice(0, 15) + '…';
-}
