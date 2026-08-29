@@ -1132,6 +1132,28 @@ function updateSheetCounts() {
 	$('#shApply').textContent = n ? tr('sheet.applyN', n) : tr('sheet.apply');
 }
 
+/// 表の全行の基準フォントをまとめて変える。
+///
+/// セルを 1 つずつ触るのと同じことをするだけで、適用の経路は変わらない。
+/// applySheet() 側の「基準と同じだった範囲だけが追随する」性質がそのまま効くので、
+/// 本文途中で別フォントを指定した箇所は残る。
+function setFontOnAllRows() {
+	const ps = resolveFontPs($('#shFont'));
+	if (!ps) { setStatus('#shStatus', tr('sheet.fontAllNone'), 'error'); return; }
+	let n = 0;
+	for (const r of sheetRows) {
+		if (r.vals.font === ps) continue;
+		r.vals.font = ps;
+		n++;
+		if (r.els.font) {
+			r.els.font.value = ps;
+			r.els.font.parentNode.classList.toggle('edited', sheetCellChanged(r, 'font'));
+		}
+	}
+	updateSheetCounts();
+	setStatus('#shStatus', tr('sheet.fontAllDone', n));
+}
+
 //--- フォントセルの候補メニュー (お気に入り + 使用中) ----------------------
 
 function openCellFontMenu(anchor, i) {
@@ -1693,6 +1715,9 @@ function wire() {
 	$('#shCopy').addEventListener('click', copySheet);
 	$('#shPaste').addEventListener('click', pasteSheetFromClipboard);
 	$('#shApply').addEventListener('click', applySheet);
+	attachFontCombo($('#shFont'));
+	$('#shFontMgr').addEventListener('click', openFontMgr);
+	$('#shFontApply').addEventListener('click', setFontOnAllRows);
 	// コピペ対象カラムのプリセット
 	for (const btn of document.querySelectorAll('[data-cols]')) {
 		btn.addEventListener('click', () => {

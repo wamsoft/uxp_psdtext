@@ -151,6 +151,26 @@
 				<button id="shPaste" class="mini" data-i18n="sheet.paste"
 					data-i18n-title="sheet.paste.title">Paste TSV</button>
 			</div>
+			<div class="row" style="align-items:center; flex-wrap:nowrap">
+				<span class="hint" data-i18n="sheet.fontAll">Font for every row</span>
+				<div class="font-combo" style="flex:1; min-width:120px">
+					<input type="text" id="shFont" spellcheck="false"
+						data-i18n-ph="style.font.ph">
+				</div>
+				<button id="shFontMgr" class="mini" data-i18n-title="fontmgr.open.title">★</button>
+				<button id="shFontApply" class="mini" data-i18n="sheet.fontAllSet"
+					data-i18n-title="sheet.fontAllSet.title">Set on every row</button>
+			</div>
+			<div class="row" style="align-items:center; flex-wrap:nowrap">
+				<span class="hint" data-i18n="sheet.fontAll">Font for every row</span>
+				<div class="font-combo" style="flex:1; min-width:120px">
+					<input type="text" id="shFont" spellcheck="false"
+						data-i18n-ph="style.font.ph">
+				</div>
+				<button id="shFontMgr" class="mini" data-i18n-title="fontmgr.open.title">★</button>
+				<button id="shFontApply" class="mini" data-i18n="sheet.fontAllSet"
+					data-i18n-title="sheet.fontAllSet.title">Set on every row</button>
+			</div>
 			<div class="sheet-wrap">
 				<table id="shTable" class="sheet"></table>
 			</div>
@@ -208,6 +228,9 @@
 				<b>Ctrl+Z 1 回で全部戻る</b>。書式列を変えても本文途中の部分書式は保たれるが、
 				<b>本文を書き換えた行は途中の書式が外れる</b> (件数を報告)。
 				規則ベースの一括リネームは姉妹ツールの PSD Power Rename へ。</p>
+				<p><b>全行のフォント</b>でフォントを選んで<b>「全行に設定」</b>を押すと、
+				表の全行の基準フォントがそれになる。適用時は<b>基準と同じフォントだった
+				範囲だけが追随</b>するので、本文途中で別フォントを指定した箇所は残る。</p>
 				<p><b>見出しのチェック</b> (またはプリセットボタン) で、コピー / 貼り付けに
 				効かせる列を選ぶ。<b>表をコピー</b>は対象列だけを TSV で書き出す。
 				Excel で編集したら<b>「TSV を貼り付け」</b>で先頭行から流し込むか、
@@ -261,6 +284,10 @@
 				Style-column edits keep the formatting inside the body; <b>rewriting the body
 				drops it</b> (reported per row). For rule-based bulk renaming see the sister
 				tool PSD Power Rename.</p>
+				<p>Pick a font under <b>Font for every row</b> and press <b>Set on every
+				row</b> to give every row that base font. On apply, <b>only the runs that
+				matched the old base font follow</b>, so a font set partway through a body
+				stays as it is.</p>
 				<p>The <b>header checkboxes</b> (or the preset buttons) choose which columns
 				copy &amp; paste touch. <b>Copy table</b> writes the target columns as TSV.
 				After editing in Excel, use <b>Paste TSV</b> to fill from the first row, or
