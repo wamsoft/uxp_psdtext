@@ -87,7 +87,10 @@ async function handleMessage(msg) {
 	case "applyTexts": {
 		const result = await applyTexts(msg.items || []);
 		send({ type: "textResult", reqId: msg.reqId, ...result });
-		sendTree();          // 適用後の最新状態を続けて送る
+		// 適用後の最新状態を続けて送る。ここで直に送ると、直後に届く
+		// 自分の変更の通知がもう 1 回ツリー全走査を呼び、同じものを 2 度作る。
+		// 同じ debounce に乗せて 1 本にまとめる (結果自体は上で返している)
+		scheduleRefresh();
 		break;
 	}
 	case "getFonts":
@@ -100,8 +103,10 @@ async function handleMessage(msg) {
 		send({ type: "rich", reqId: msg.reqId, ...(await readRich(msg.id)) });
 		break;
 	case "getRichMany": {
+		const ids = msg.ids || [];
+		const tkMap = await getTextKeyDescMany(ids);      // 往復 N → 1
 		const map = {};
-		for (const id of msg.ids || []) map[id] = await readRich(id);
+		for (const id of ids) map[id] = richFromTextKey(tkMap.get(id), id);
 		send({ type: "richMany", reqId: msg.reqId, map });
 		break;
 	}
@@ -257,8 +262,14 @@ async function applyTexts(items) {
 	const doc = app.activeDocument;
 	if (!doc) return { applied: 0, errors: [{ message: "no document" }] };
 
-	let applied = 0;
 	const errors = [];
+	const failed = new Set();      ///< エラーの出た item の添字
+	const fail = (i, it, e) => {
+		if (failed.has(i)) return;   // 1 件につきエラーは 1 つ
+		failed.add(i);
+		errors.push({ id: it.id, message: String(e && e.message || e) });
+	};
+
 	applying = true;
 	try {
 		await core.executeAsModal(async (ctx) => {
@@ -267,30 +278,71 @@ async function applyTexts(items) {
 				name: "Edit Text",
 			});
 			try {
-				for (const it of items) {
+				// id → レイヤ。item ごとにツリーを全走査すると M×N になる
+				const byId = new Map();
+				(function walk(ls) {
+					for (const l of ls) {
+						byId.set(l.id, l);
+						if (l.layers) walk(l.layers);
+					}
+				})(doc.layers);
+
+				// 部分書式を書く分の textKey をまとめて取る (往復 N → 1)
+				const tkMap = await getTextKeyDescMany(
+					items.filter(it => it.rich && typeof it.rich === "object").map(it => it.id));
+
+				// ① 名前とプレーン本文。部分書式は記述子を組むだけで送らない。
+				//    3 段に割っても 1 件の中の順序は元のまま (本文 → 部分書式 → 書式)。
+				//    揃えが最後に来ないと、部分書式の paragraphStyleRange に潰される。
+				const sets = [];
+				for (let i = 0; i < items.length; i++) {
+					const it = items[i];
 					try {
-						const l = findLayerById(doc.layers, it.id);
+						const l = byId.get(it.id);
 						if (!l) throw new Error("layer not found: " + it.id);
 						if (typeof it.name === "string" && it.name.trim() && it.name !== l.name) {
 							l.name = it.name;
 						}
 						if (it.rich && typeof it.rich === "object") {
-							await applyRichTo(it.id, it.rich);
+							sets.push({ i, it,
+							            desc: buildRichSet(it.id, it.rich, tkMap.get(it.id)) });
 						} else if (typeof it.text === "string") {
 							if (!l.textItem) throw new Error("not a text layer: " + it.id);
 							l.textItem.contents = it.text.replace(/\n/g, "\r");
 						}
-						if (it.style && typeof it.style === "object") {
-							if (it.rich) {
-								// 文字属性は範囲側で処理済み。段落の揃えだけ通す
-								if (it.style.align) applyStyleTo(l, { align: it.style.align });
-							} else {
-								applyStyleTo(l, it.style);
-							}
-						}
-						applied++;
 					} catch (e) {
-						errors.push({ id: it.id, message: String(e && e.message || e) });
+						fail(i, it, e);
+					}
+				}
+
+				// ② 部分書式の書き戻しも 1 回にまとめる (往復 N → 1)。
+				//    まとめて失敗したら 1 件ずつやり直し、どれが悪いのかを残す。
+				if (sets.length) {
+					try {
+						await action.batchPlay(sets.map(x => x.desc), {});
+					} catch (e) {
+						for (const x of sets) {
+							try { await action.batchPlay([x.desc], {}); }
+							catch (e2) { fail(x.i, x.it, e2); }
+						}
+					}
+				}
+
+				// ③ レイヤ全体の書式。rich の行は文字属性が範囲側に焼き込まれて
+				//    届いているので、段落の揃えだけ通す
+				for (let i = 0; i < items.length; i++) {
+					const it = items[i];
+					if (failed.has(i)) continue;
+					if (!it.style || typeof it.style !== "object") continue;
+					try {
+						const l = byId.get(it.id);
+						if (it.rich) {
+							if (it.style.align) applyStyleTo(l, { align: it.style.align });
+						} else {
+							applyStyleTo(l, it.style);
+						}
+					} catch (e) {
+						fail(i, it, e);
 					}
 				}
 			} finally {
@@ -300,7 +352,7 @@ async function applyTexts(items) {
 	} finally {
 		applying = false;
 	}
-	return { applied, errors };
+	return { applied: items.length - failed.size, errors };
 }
 
 //---------------------------------------------------------------------------
@@ -312,15 +364,39 @@ async function applyTexts(items) {
 // textStyle をテンプレートに全範囲へ引き継ぐ (psdtext と同じ流儀)。
 //---------------------------------------------------------------------------
 
-async function getTextKeyDesc(id) {
-	const [res] = await action.batchPlay([{
+function textKeyGet(id) {
+	return {
 		_obj: "get",
 		_target: [
 			{ _ref: "property", _property: "textKey" },
 			{ _ref: "layer", _id: id },
 		],
-	}], {});
+	};
+}
+
+async function getTextKeyDesc(id) {
+	const [res] = await action.batchPlay([textKeyGet(id)], {});
 	return res && res.textKey;
+}
+
+/// 複数レイヤの textKey をまとめて取る。
+///
+/// batchPlay は記述子を何個でも取れるので、1 レイヤ 1 往復にすると
+/// レイヤ数ぶん往復するだけ遅くなる。まとめて失敗したときだけ 1 件ずつ
+/// 取り直して、悪い 1 枚のせいで全部が読めなくなるのを避ける。
+async function getTextKeyDescMany(ids) {
+	const map = new Map();
+	if (!ids.length) return map;
+	try {
+		const res = await action.batchPlay(ids.map(textKeyGet), {});
+		ids.forEach((id, i) => map.set(id, (res[i] && res[i].textKey) || null));
+	} catch (e) {
+		for (const id of ids) {
+			try { map.set(id, await getTextKeyDesc(id)); }
+			catch (e2) { map.set(id, null); }
+		}
+	}
+	return map;
 }
 
 async function rawTextKey(id) {
@@ -370,9 +446,10 @@ function alignEnum(v) {
 }
 
 /// {text, ranges, paragraphs:[{from,to,align}]} を返す
-async function readRich(id) {
+/// textKey 記述子から webview 用の {text, ranges, paragraphs} を作る。
+/// 取得と分けてあるので、まとめ取りした結果からも同じ形が作れる。
+function richFromTextKey(tk, id) {
 	try {
-		const tk = await getTextKeyDesc(id);
 		if (!tk) return { message: "no textKey: " + id };
 		const text = String(tk.textKey || "").replace(/\r/g, "\n");
 		const ranges = (tk.textStyleRange || [])
@@ -389,6 +466,11 @@ async function readRich(id) {
 	} catch (e) {
 		return { message: String(e && e.message || e) };
 	}
+}
+
+async function readRich(id) {
+	try { return richFromTextKey(await getTextKeyDesc(id), id); }
+	catch (e) { return { message: String(e && e.message || e) }; }
 }
 
 /// テンプレート (先頭ランの textStyle) に簡易スタイルを重ねる。
@@ -458,8 +540,9 @@ function clampParagraphRanges(prs, len) {
 }
 
 /// rich = {text (\n区切り), ranges} をレイヤへ書き戻す (モーダル内から呼ぶ)
-async function applyRichTo(id, rich) {
-	const tk = await getTextKeyDesc(id);
+/// 部分書式の書き戻し記述子を組み立てる。送るのは呼び側 (まとめて 1 回)。
+/// textKey は先にまとめ取りしたものを渡す。
+function buildRichSet(id, rich, tk) {
 	if (!tk) throw new Error("no textKey: " + id);
 	const srcRanges = (tk.textStyleRange || []).slice().sort((a, b) => a.from - b.from);
 	const template0 = (srcRanges[0] && srcRanges[0].textStyle) || {};
@@ -523,11 +606,7 @@ async function applyRichTo(id, rich) {
 		if (prs.length) to.paragraphStyleRange = prs;
 	}
 
-	await action.batchPlay([{
-		_obj: "set",
-		_target: [{ _ref: "textLayer", _id: id }],
-		to,
-	}], {});
+	return { _obj: "set", _target: [{ _ref: "textLayer", _id: id }], to };
 }
 
 //---------------------------------------------------------------------------
