@@ -11,6 +11,7 @@ import { dlog } from './debug.js';
 import { wireModalClose, escapeModal } from './common/modal.js';
 import { createBridge } from './common/bridge.js';
 import { newIid, createDiag } from './common/diag.js';
+import { createWakeHint } from './common/wake.js';
 import { tr, applyI18n, toggleLang, currentLang, setLang } from './i18n.js';
 import { baseStyle, sameValue, STYLE_ATTRS } from './tags.js';
 import { rangesToTagged, taggedToRich } from './rich.js';
@@ -1810,4 +1811,5 @@ applyI18n();
 $('#langBtn').textContent = tr('app.lang');
 wire();
 renderAll();
+createWakeHint();      // 開いた直後はキーが届かない。1 つでも通れば自分で消える
 bridge.connect();

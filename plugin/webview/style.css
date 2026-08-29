@@ -309,6 +309,21 @@ input[type=color] { flex: none; padding: 1px 2px; width: 48px; height: 24px; }
 	border-radius: 3px;
 }
 
+/*-- 起こしてくださいの案内 ------------------------------------------------*/
+
+#wakeHint {
+	display: none;           /* wake.js が .show を付けたときだけ出す */
+	flex: none;
+	padding: 4px 8px;
+	font-size: 11px;
+	line-height: 1.4;
+	color: var(--fg-dim);
+	background: var(--bg2);
+	border-bottom: 1px solid var(--border);
+	cursor: pointer;
+}
+#wakeHint.show { display: block; }
+
 /*-- 自己診断行 ------------------------------------------------------------*/
 
 #diagLine {

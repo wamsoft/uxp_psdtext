@@ -17,6 +17,8 @@ const DICT = {
 		'app.lang':        'EN',
 		'modal.dirty':     '変更があります。「適用」か × で閉じてください',
 		'app.timeout':     'パネルから応答がありません ({0})',
+		'app.wake':        '入力できないときは、Photoshop の画面を一度クリックしてください',
+		'app.wake.title':  'パネルを開いた直後はキーボード入力が届きません (Windows の既知の不具合)。Photoshop 本体を一度クリックすると解消します。キーが届けばこの案内は消えます',
 		'app.help.title':  '使い方を表示',
 		'help.title':      'PSD Text Edit の使い方',
 
@@ -129,6 +131,8 @@ const DICT = {
 		'app.lang':        'JA',
 		'modal.dirty':     'Unsaved changes — close with Apply or ×',
 		'app.timeout':     'No response from the panel ({0})',
+		'app.wake':        'If typing does nothing, click the Photoshop window once',
+		'app.wake.title':  'A panel that was just opened receives no keystrokes (a known Windows issue). One click on Photoshop itself fixes it. This notice disappears as soon as a key gets through.',
 		'app.help.title':  'Show the guide',
 		'help.title':      'PSD Text Edit Guide',
 

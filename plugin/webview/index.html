@@ -19,6 +19,10 @@
 	<button id="refreshBtn" class="mini" data-i18n="app.refresh" data-i18n-title="app.refresh.title">Reload</button>
 </header>
 
+<!-- 開いた直後のパネルにはキーボードが届かない (Adobe 既知・Windows のみ)。
+     キーが 1 つでも通れば wake.js がこれを消す。 -->
+<div id="wakeHint" data-i18n="app.wake" data-i18n-title="app.wake.title"></div>
+
 <div id="toolbar">
 	<input type="search" id="filter" data-i18n-ph="tree.filter.ph" spellcheck="false">
 	<label class="toggle"><input type="checkbox" id="fltText" checked>
